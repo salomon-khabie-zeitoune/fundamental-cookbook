@@ -23,6 +23,8 @@ You must have:
 
 #### Compute Capacity
 
+The platform also provisions a **fully managed, private EKS cluster** for its Kubernetes application workloads. You do not create or operate this cluster, but you must have capacity for its worker nodes.
+
 Ensure your AWS account has capacity for the following instance types in your deployment region:
 
 | Tier | Recommended | Alternative |
@@ -30,6 +32,7 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **API** | `m7i.4xlarge` | `m7i.2xlarge` |
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
+| **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | `m7i.2xlarge` |
 
 ### Set Environment Variables
 
@@ -156,6 +159,21 @@ For guaranteed GPU capacity, you can use [EC2 Capacity Blocks](https://docs.aws.
 | `CapacityReservationId` | Your Capacity Block reservation ID (e.g., `cr-1234567890abcdef0`) |
 
 > **Note:** When using Capacity Blocks, the GPU instances will only launch in the specified Availability Zone. Ensure your Capacity Block is active and has sufficient capacity for your `ModelGpuDesiredCapacity`.
+
+#### EKS Platform
+
+The platform includes a **private, fully managed EKS cluster** that runs its Kubernetes application workloads. It is created and operated by the stack, has a **private-only API endpoint** (no public access), and runs managed worker nodes across two Availability Zones. The defaults are production-ready, so most deployments need no changes here.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `EksNodeInstanceType` | Instance type for the EKS worker nodes | `m7i.4xlarge` |
+| `EksNodeDesiredCapacity` | Number of EKS worker nodes (one per AZ recommended) | `1` |
+| `EksNodeMinCapacity` / `EksNodeMaxCapacity` | Auto Scaling bounds for the worker nodes | `1` |
+| `EksNodeRootVolumeSize` | Root EBS volume size (GiB) per node | `100` |
+| `EksKubernetesVersion` | EKS control-plane version | `1.33` |
+| `EksAdminRoleArn` | *(Optional)* ARN of an IAM role to grant `kubectl` (cluster-admin) access. Leave empty if you don't need direct cluster access. | *(empty)* |
+
+> **Note:** Because the cluster endpoint is private, any `kubectl` access (when `EksAdminRoleArn` is set) must originate from inside the deployment VPC. Direct cluster access is **not** required to use the platform.
 
 ### 4. Deploy the Platform
 

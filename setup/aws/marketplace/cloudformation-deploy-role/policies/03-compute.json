@@ -101,6 +101,71 @@
         "elasticloadbalancing:DescribeTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "EKS",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateCluster",
+        "eks:DeleteCluster",
+        "eks:DescribeCluster",
+        "eks:UpdateClusterConfig",
+        "eks:UpdateClusterVersion",
+        "eks:DescribeUpdate",
+        "eks:ListUpdates",
+        "eks:CreateNodegroup",
+        "eks:DeleteNodegroup",
+        "eks:DescribeNodegroup",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:ListNodegroups",
+        "eks:CreateAddon",
+        "eks:DeleteAddon",
+        "eks:DescribeAddon",
+        "eks:DescribeAddonVersions",
+        "eks:UpdateAddon",
+        "eks:ListAddons",
+        "eks:CreateAccessEntry",
+        "eks:DeleteAccessEntry",
+        "eks:DescribeAccessEntry",
+        "eks:UpdateAccessEntry",
+        "eks:ListAccessEntries",
+        "eks:AssociateAccessPolicy",
+        "eks:DisassociateAccessPolicy",
+        "eks:ListAssociatedAccessPolicies",
+        "eks:TagResource",
+        "eks:UntagResource",
+        "eks:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaForEksHelm",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:InvokeFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:ListTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrImagePullForLambdaCreation",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "*"
     }
   ]
 }

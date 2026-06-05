@@ -20,9 +20,9 @@ cloudformation-deploy-role/
 ├── policies/
 │   ├── 01-cloudformation-s3.json  # CloudFormation + S3 buckets
 │   ├── 02-networking.json         # VPC, Subnets, NAT, IGW, Routes, Endpoints, Security Groups
-│   ├── 03-compute.json            # EC2, Launch Templates, ASG, Load Balancers
-│   ├── 04-iam.json                # IAM Roles, Instance Profiles (scoped)
-│   ├── 05-data-services.json      # KMS, Secrets, AmazonMQ, ElastiCache, SSM, CloudWatch Logs
+│   ├── 03-compute.json            # EC2, Launch Templates, ASG, Load Balancers, EKS, helm-deployer Lambda
+│   ├── 04-iam.json                # IAM Roles, Instance Profiles, OIDC provider (IRSA), service-linked roles
+│   ├── 05-data-services.json      # KMS (incl. grants), Secrets, AmazonMQ, ElastiCache, SSM, CloudWatch Logs
 │   └── 06-api-gateway.json        # REST API Gateway, VPC Links
 ├── create-role.sh                 # Script to create the role
 ├── delete-role.sh                 # Script to delete the role

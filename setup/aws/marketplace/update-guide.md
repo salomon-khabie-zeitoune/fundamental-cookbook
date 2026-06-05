@@ -10,6 +10,8 @@ This guide walks customers through updating an existing Fundamental Platform dep
 - An existing CloudFormation stack deployed from a previous version
 - Access to the AWS Management Console with permissions to update CloudFormation stacks
 
+> **Important (service-role deployments):** If you deploy with the CloudFormation service role (Option B), refresh the role **before** updating. Newer versions add a managed EKS cluster, so the role needs additional permissions (EKS, OIDC/IRSA, the helm-deployer Lambda, KMS grants). Re-run `cloudformation-deploy-role/create-role.sh` (or re-apply the policy files in `cloudformation-deploy-role/policies/`) to pick them up. Skipping this causes the update to fail with `AccessDenied` on the EKS resources.
+
 ### 1. Get the New Version Details from AWS Marketplace
 
 1. Go to **AWS Marketplace Console** → **Manage Subscriptions** → Find your Fundamental Platform subscription → Click **Launch**
