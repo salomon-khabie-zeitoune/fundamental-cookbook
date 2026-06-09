@@ -2,6 +2,8 @@
 
 ## Part 1: Deploy Fundamental
 
+> **Platform version:** This guide covers **v1.2.0**, the minor release that introduces the fully managed, private EKS tier described below. If you are updating an existing deployment from an earlier (pre-EKS) version, follow the [Update Guide](./update-guide.md) instead. Service-role deployments must refresh the deploy role before updating to v1.2.0 or later.
+
 ### Prerequisites
 
 #### AWS Account
@@ -34,12 +36,26 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
 | **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | `m7i.2xlarge` |
 
+#### Container Images
+
+The platform pulls **all** container images and Helm charts from Fundamental's managed container registry (Amazon ECR in our artifact account). You do **not** host any images, mirror any registries, or supply registry credentials. Image pulls do **not** require internet egress: every pull stays inside AWS over VPC endpoints the stack provisions for you (ECR API, ECR Docker, and S3 for image layers).
+
+There are three read-only, cross-account pull paths into our registry:
+
+| What | How it is pulled |
+|------|------------------|
+| **helm-deployer Lambda image** | The in-VPC Lambda that installs the Kubernetes workloads runs from our registry image, pulled cross-account into your deployment region. (Lambda requires the image in-region, so we publish it to every supported region.) |
+| **Helm charts** | The Lambda authenticates to our registry and runs `helm upgrade --install` for the Fundamental charts (CRDs, then infrastructure, then application), served as OCI artifacts from the same registry. |
+| **Pod images (including third-party)** | The EKS worker nodes pull every workload image, including third-party dependencies (ingress, load-balancer controller, database operator, monitoring), from our registry using the node IAM role. Third-party images are served through our registry's pull-through cache, so your cluster never reaches Docker Hub, GHCR, or Quay directly. |
+
+> **Note:** Granting your account access to our registry is handled on the Fundamental side. The only customer-side requirement is the deploy permissions: admin (Option A) covers this automatically, and the service role (Option B) already includes the cross-account ECR pull permissions. Service-role customers updating from a pre-EKS version must refresh the role first (see the [Update Guide](./update-guide.md)).
+
 ### Set Environment Variables
 
 ```bash
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export DEPLOYMENT_REGION=us-west-1
-export FUNDAMENTAL_VERSION=0.1.0
+export FUNDAMENTAL_VERSION=1.2.0
 ```
 
 > **Supported Regions:** `us-west-1`, `us-east-1`
