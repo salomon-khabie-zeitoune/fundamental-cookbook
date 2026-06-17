@@ -38,17 +38,31 @@ Ensure your AWS account has capacity for the following instance types in your de
 
 #### Container Images
 
-The platform pulls **all** container images and Helm charts from Fundamental's managed container registry (Amazon ECR in our artifact account). You do **not** host any images, mirror any registries, or supply registry credentials. Image pulls do **not** require internet egress: every pull stays inside AWS over VPC endpoints the stack provisions for you (ECR API, ECR Docker, and S3 for image layers).
+The platform pulls all container images and Helm charts from a container registry during deployment. There are two supported models:
 
-There are three read-only, cross-account pull paths into our registry:
+**Model 1 (default): Pull from Fundamental's registry (cross-account)**
+
+Fundamental hosts an Amazon ECR registry. When your AWS account is on the allow-list, the EKS worker nodes and the helm-deployer Lambda pull directly from our `marketplace/` namespace in that registry. You do not host any images or supply registry credentials.
+
+Image pulls do not require internet egress: every pull stays inside AWS over VPC endpoints the stack provisions for you (ECR API, ECR Docker, and S3 for image layers).
 
 | What | How it is pulled |
 |------|------------------|
-| **helm-deployer Lambda image** | The in-VPC Lambda that installs the Kubernetes workloads runs from our registry image, pulled cross-account into your deployment region. (Lambda requires the image in-region, so we publish it to every supported region.) |
-| **Helm charts** | The Lambda authenticates to our registry and runs `helm upgrade --install` for the Fundamental charts (CRDs, then infrastructure, then application), served as OCI artifacts from the same registry. |
-| **Pod images (including third-party)** | The EKS worker nodes pull every workload image, including third-party dependencies (ingress, load-balancer controller, database operator, monitoring), from our registry using the node IAM role. Third-party images are served through our registry's pull-through cache, so your cluster never reaches Docker Hub, GHCR, or Quay directly. |
+| **helm-deployer Lambda image** | Pulled cross-account into your deployment region at Lambda invocation time. |
+| **Helm charts** | The Lambda authenticates to our registry and runs `helm upgrade --install` for the Fundamental charts (CRDs, then infrastructure, then application) as OCI artifacts. |
+| **Pod images (including third-party)** | The EKS worker nodes pull every workload image, including third-party dependencies (ingress, load-balancer controller, database operator, monitoring), using the node IAM role. Third-party images are served through our registry's pull-through cache. |
 
-> **Note:** Granting your account access to our registry is handled on the Fundamental side. The only customer-side requirement is the deploy permissions: admin (Option A) covers this automatically, and the service role (Option B) already includes the cross-account ECR pull permissions. Service-role customers updating from a pre-EKS version must refresh the role first (see the [Update Guide](./update-guide.md)).
+> **Note:** Granting your account access to our registry is handled by Fundamental. The only customer-side requirement is deploy permissions: admin (Option A) covers this automatically, and the service role (Option B) already includes the cross-account ECR pull permissions.
+
+**Model 2 (offline bundle): Load images into your own ECR first**
+
+If your environment cannot pull from Fundamental's registry (for example, due to network policy or security constraints), Fundamental provides an offline bundle artifact containing all images and Helm charts. You load the bundle into your own ECR, then set the `ImageRegistryUri` CloudFormation parameter to your ECR prefix. Every image reference in the deployment follows that prefix, so the deployment is fully self-contained in your account.
+
+This is a manual pre-step before deploying or upgrading. See the [Image Bundle Guide](./image-bundle-guide.md) for detailed instructions.
+
+The `ImageRegistryUri` parameter accepts an ECR repository prefix (for example, `<CUSTOMER_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental`). Leave it empty to use the default cross-account pull from Fundamental's registry.
+
+> **Note:** Service-role customers updating from a pre-EKS version must refresh the deploy role before upgrading to v1.2.0 or later. See the [Upgrade Guide](./update-guide.md).
 
 ### Set Environment Variables
 
