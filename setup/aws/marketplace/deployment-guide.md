@@ -289,7 +289,7 @@ aws ec2 describe-instances \
 
 **Using AWS Console:**
 
-Go to **CloudFormation** → **Stacks** → select your stack → **Outputs** tab. Note the values listed — you will need these to connect your application.
+Go to **CloudFormation** → **Stacks** → select your stack → **Outputs** tab. Note the values listed; you will need these to connect your application.
 
 **Using AWS CLI:**
 
