@@ -14,14 +14,71 @@
 
 #### Networking
 
-The Fundamental platform deploys into its own isolated VPC, but requires a "Consumer" VPC where your client applications will reside.
+##### Platform VPC (created automatically by the stack)
 
-You must have:
+The Fundamental platform provisions its own isolated VPC during deployment. You do not need to create or supply a VPC for the platform itself: leave `ExistingVpcId` empty (the default) and the stack creates a new VPC with two private subnets across two Availability Zones, the required route tables, and all VPC endpoints.
 
-- **Consumer VPC ID**: An existing VPC where your client applications will run
-- **Consumer Subnet IDs**: Subnets within that VPC with outbound internet access (to download packages) and connectivity to the Fundamental endpoint
+**Bringing an existing VPC (optional):** If you want the platform to deploy into a VPC you already control, set `ExistingVpcId` and supply the six accompanying parameters listed in the table below. The existing VPC must meet these requirements:
 
-> **Note:** Ensure you have the full VPC ID (e.g., `vpc-0abc123def456789a`) and Subnet ID (e.g., `subnet-0abc123def456789a`).
+- Two private subnets in two different Availability Zones (no public IP auto-assignment)
+- One route table per subnet, each with a route to a NAT gateway or equivalent egress path
+- `EnableDnsHostnames` and `EnableDnsSupport` both enabled on the VPC
+- Sufficient CIDR space: the stack adds EKS internal load-balancer subnets and VPC endpoint ENIs inside the VPC
+
+| Parameter | Description |
+|-----------|-------------|
+| `ExistingVpcId` | ID of the existing VPC (e.g., `vpc-0abc123def456789a`) |
+| `ExistingPrivateSubnet1Id` | Private subnet in AZ 1 (e.g., `subnet-0abc123def456789a`) |
+| `ExistingPrivateSubnet2Id` | Private subnet in AZ 2 (e.g., `subnet-0def456abc789012b`) |
+| `ExistingPrivateRouteTable1Id` | Route table associated with subnet 1 |
+| `ExistingPrivateRouteTable2Id` | Route table associated with subnet 2 |
+| `ExistingPrivateSubnet1Az` | AZ name for subnet 1 (e.g., `<REGION>a`) |
+| `ExistingPrivateSubnet2Az` | AZ name for subnet 2 (e.g., `<REGION>b`) |
+
+If you are deploying into a brand-new account, skip this block entirely and let the stack create the VPC for you.
+
+---
+
+##### Consumer VPC (optional - for client application access)
+
+The `ConsumerVpc1Id` and `ConsumerVpc1SubnetIds` parameters connect an existing VPC in your account (where your client applications live) to the platform's API endpoint. This is optional: skip it if you plan to call the API from the same VPC the platform creates, or if you will set up connectivity separately.
+
+If your client applications run in a VPC that is separate from the platform VPC, supply:
+
+- **`ConsumerVpc1Id`**: The VPC ID of the network where your applications will call the platform API (e.g., `vpc-0abc123def456789a`)
+- **`ConsumerVpc1SubnetIds`**: Comma-separated subnet IDs within that VPC (e.g., `subnet-111,subnet-222`). These subnets receive a VPC endpoint that routes traffic to the platform privately, so they do not need internet egress.
+
+Up to five Consumer VPCs are supported (`ConsumerVpc1*` through `ConsumerVpc5*`).
+
+**If your account has no existing VPC yet**, create one before deploying. The minimum viable setup for a Consumer VPC is a single private subnet in one AZ:
+
+```bash
+# Replace <REGION>, <VPC_CIDR>, and <SUBNET_CIDR> with your values.
+# Example: REGION=us-west-1, VPC_CIDR=10.1.0.0/16, SUBNET_CIDR=10.1.1.0/24
+
+VPC_ID=$(aws ec2 create-vpc \
+  --cidr-block <VPC_CIDR> \
+  --region <REGION> \
+  --query 'Vpc.VpcId' --output text)
+
+aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames --region <REGION>
+aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support --region <REGION>
+
+# Create a private subnet in the first AZ (e.g., <REGION>a)
+SUBNET_ID=$(aws ec2 create-subnet \
+  --vpc-id "$VPC_ID" \
+  --cidr-block <SUBNET_CIDR> \
+  --availability-zone <REGION>a \
+  --region <REGION> \
+  --query 'Subnet.SubnetId' --output text)
+
+echo "VPC ID:    $VPC_ID"
+echo "Subnet ID: $SUBNET_ID"
+```
+
+Pass `$VPC_ID` as `ConsumerVpc1Id` and `$SUBNET_ID` as `ConsumerVpc1SubnetIds` when launching the stack.
+
+> **Note:** The Consumer VPC subnet does not require a NAT gateway or internet gateway. The stack provisions a VPC endpoint inside it so traffic to the platform API stays entirely within the AWS network.
 
 #### Compute Capacity
 
