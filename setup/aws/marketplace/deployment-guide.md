@@ -11,6 +11,13 @@
 - AWS Account with appropriate permissions
 - AWS CLI installed and configured
 - Active subscription to the **Fundamental Platform** on [AWS Marketplace](https://aws.amazon.com/marketplace). Navigate to the product listing, click **Continue to Subscribe**, and accept the terms. Once the subscription is active, you can proceed with deployment.
+- **AutoScaling service-linked role** present in the account. The platform's KMS key grants this role use of the key (so EC2 Auto Scaling can encrypt the compute tiers' EBS volumes), and the key is created before any Auto Scaling group, so the role must already exist. AWS normally creates it on first Auto Scaling use; in a brand-new account, create it once up front:
+
+  ```bash
+  aws iam create-service-linked-role --aws-service-name autoscaling.amazonaws.com
+  ```
+
+  (If it already exists you'll get `InvalidInput: Service role name ... has been taken` - safe to ignore.) Other service-linked roles (EKS, Elastic Load Balancing) are created automatically while the stack provisions those services, so only this one needs creating in advance.
 
 #### Networking
 
