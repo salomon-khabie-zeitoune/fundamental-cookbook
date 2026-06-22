@@ -68,7 +68,7 @@ Use whichever scanner your organization standardizes on (Trivy, Grype, Amazon In
 
 ## Step 4: Load the images into your ECR
 
-The bundle ships `restore-bundle.sh`, which logs `crane` in to your ECR, creates each repository, and pushes every image preserving its path and tag. Pass the **full registry URI including the `/marketplace` prefix** - this is exactly the value you will give CloudFormation as `ImageRegistryUri`.
+The bundle ships `restore-bundle.sh`, which logs `crane` in to your ECR, creates each repository, and pushes every image preserving its path and tag. Pass the **full registry URI including the `/fundamental` prefix** - this is exactly the value you will give CloudFormation as `ImageRegistryUri`.
 
 ```bash
 export ACCOUNT_ID=<ACCOUNT_ID>
@@ -76,11 +76,11 @@ export REGION=<REGION>          # e.g. us-west-1
 
 cd bundle
 ./restore-bundle.sh \
-  --registry-uri ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/marketplace \
+  --registry-uri ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/fundamental \
   --region ${REGION}
 ```
 
-Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/marketplace/<path>:<tag>`. When it finishes, the script prints the exact `ImageRegistryUri` and `SkipImageImport` values to set.
+Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental/<path>:<tag>`. When it finishes, the script prints the exact `ImageRegistryUri` and `SkipImageImport` values to set.
 
 > The bundle contains ~16 images/charts; ~2.8 GiB compressed.
 
@@ -89,16 +89,16 @@ Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/marketplace
 ```bash
 aws ecr describe-repositories \
   --region $REGION \
-  --query 'repositories[?starts_with(repositoryName, `marketplace/`)].repositoryName' \
+  --query 'repositories[?starts_with(repositoryName, `fundamental/`)].repositoryName' \
   --output table
 
 aws ecr list-images \
-  --repository-name marketplace/dockerhub/temporalio/server \
+  --repository-name fundamental/dockerhub/temporalio/server \
   --region $REGION \
   --output table
 ```
 
-You should see ~16 `marketplace/*` repositories, each with at least one tag.
+You should see ~16 `fundamental/*` repositories, each with at least one tag.
 
 ## Step 6: Deploy with the importer skipped
 
@@ -107,9 +107,9 @@ When you launch (or upgrade) the CloudFormation stack, set:
 | Parameter | Value |
 |-----------|-------|
 | `SkipImageImport` | `true` |
-| `ImageRegistryUri` | `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/marketplace` |
+| `ImageRegistryUri` | `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental` |
 
-For example, `ImageRegistryUri = 123456789012.dkr.ecr.us-west-1.amazonaws.com/marketplace`.
+For example, `ImageRegistryUri = 123456789012.dkr.ecr.us-west-1.amazonaws.com/fundamental`.
 
 Every image reference in the template is built as `${ImageRegistryUri}/<path>:<tag>`, so `${ImageRegistryUri}/dockerhub/temporalio/server:1.31.0` resolves to exactly where `restore-bundle.sh` placed it. With `SkipImageImport=true`, the stack does not run the importer Lambda and goes straight to deploying from your pre-loaded registry.
 

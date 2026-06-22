@@ -114,7 +114,7 @@ Nothing leaves AWS: the bundle download and the image pushes stay inside AWS ove
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `ImageRegistryUri` | ECR prefix the platform pulls from. Leave empty to use your own account's registry (`<account>.dkr.ecr.<region>.amazonaws.com/marketplace`), which the importer populates. | *(empty)* |
+| `ImageRegistryUri` | ECR prefix the platform pulls from. Leave empty to use your own account's registry (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`), which the importer populates. | *(empty)* |
 | `SkipImageImport` | Leave `false` for the automatic import. Set `true` only if you have loaded the bundle into your ECR yourself (see the optional pre-scan path below). | `false` |
 | `BundleS3Key` / `CraneS3Key` | S3 keys of the bundle and crane binary. Pre-filled for this version; you change them only on an upgrade, using the values Fundamental provides. | *(version-pinned)* |
 
