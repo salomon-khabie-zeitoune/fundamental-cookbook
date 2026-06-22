@@ -39,11 +39,11 @@ If you are deploying into a brand-new account, skip this block entirely and let 
 
 ---
 
-##### Consumer VPC (optional - for client application access)
+##### Consumer VPC (REQUIRED - for client application access)
 
-The `ConsumerVpc1Id` and `ConsumerVpc1SubnetIds` parameters connect an existing VPC in your account (where your client applications live) to the platform's API endpoint. This is optional: skip it if you plan to call the API from the same VPC the platform creates, or if you will set up connectivity separately.
+The `ConsumerVpc1Id` and `ConsumerVpc1SubnetIds` parameters connect an existing VPC in your account (where your client applications live) to the platform's private API endpoint. **At least one Consumer VPC is required** - the template rejects a deployment with neither set ("At least one Consumer VPC must be configured"). The platform's API is private, so it must have a consumer-side VPC endpoint to be reachable; the platform VPC it creates for itself does not serve that purpose.
 
-If your client applications run in a VPC that is separate from the platform VPC, supply:
+If you do not already have a VPC to use, create a minimal one first (see below). You must supply:
 
 - **`ConsumerVpc1Id`**: The VPC ID of the network where your applications will call the platform API (e.g., `vpc-0abc123def456789a`)
 - **`ConsumerVpc1SubnetIds`**: Comma-separated subnet IDs within that VPC (e.g., `subnet-111,subnet-222`). These subnets receive a VPC endpoint that routes traffic to the platform privately, so they do not need internet egress.
@@ -201,12 +201,12 @@ Users running the deployment need this minimal policy to use the service role:
 
 ### 2. Required Information
 
-The platform needs **no required inputs beyond a stack name** (`DeploymentName`): it creates its own VPC and loads its own images. The following are **optional** and only needed if your client applications run in a separate VPC that must reach the private API (see [Networking](#networking)):
+The platform creates its own VPC and loads its own images, but you **must** provide one Consumer VPC (where your applications call the private API from) - see [Networking](#networking). If you do not have one, create it first (commands in the Networking section).
 
 | Parameter | Description | Example | Required? |
 |-----------|-------------|---------|-----------|
-| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 | Optional |
-| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 | Optional (required if `ConsumerVpc1Id` set) |
+| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 | **Required** |
+| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 | **Required** |
 
 ### 3. Stack Configuration (Optional)
 
