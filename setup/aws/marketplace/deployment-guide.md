@@ -168,6 +168,7 @@ cd setup/aws/marketplace/cloudformation-deploy-role
 **What the script creates:**
 
 - IAM Role: `FundamentalPlatform-CFServiceRole`
+- Customer-managed policies `FundamentalPlatform-CFServiceRole-*` (one per permission area), attached to the role. (Managed, not inline, because the combined permission set exceeds the 10,240-char inline-policy limit.)
 
 **User permissions required:**
 
