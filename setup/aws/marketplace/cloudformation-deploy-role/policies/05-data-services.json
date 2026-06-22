@@ -51,6 +51,7 @@
         "mq:CreateBroker",
         "mq:DeleteBroker",
         "mq:DescribeBroker",
+        "mq:DescribeSharedResources",
         "mq:ListBrokers",
         "mq:UpdateBroker",
         "mq:RebootBroker",
