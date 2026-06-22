@@ -95,29 +95,23 @@ Ensure your AWS account has capacity for the following instance types in your de
 
 #### Container Images
 
-The platform pulls all container images and Helm charts from a container registry during deployment. There are two supported models:
+You do **not** host images, supply registry credentials, or run any manual image step. At deploy time the stack loads every container image and Helm chart into **your own account's Amazon ECR**, and the platform pulls from there. The deployment ends up fully self-contained in your account.
 
-**Model 1 (default): Pull from Fundamental's registry (cross-account)**
+**How it works (automatic - this is the default):**
 
-Fundamental hosts an Amazon ECR registry. When your AWS account is on the allow-list, the EKS worker nodes and the helm-deployer Lambda pull directly from our `marketplace/` namespace in that registry. You do not host any images or supply registry credentials.
+- Fundamental publishes a single **offline image bundle** (all images + Helm charts) and a small `crane` binary to an S3 bucket your account is granted read access to.
+- A native **image-importer Lambda** - created by the stack and running inside the platform VPC - downloads the bundle, creates the ECR repositories in your account, and pushes every image: the Fundamental charts (CRDs, infrastructure, application), the helm-deployer image, and all third-party dependencies (Temporal, database operator, ingress, load-balancer controller, monitoring).
+- It runs **before** the rest of the platform, so by the time the Kubernetes workloads start, every image already exists in your ECR. The helm-deployer Lambda and the EKS nodes then pull from your own registry.
 
-Image pulls do not require internet egress: every pull stays inside AWS over VPC endpoints the stack provisions for you (ECR API, ECR Docker, and S3 for image layers).
+Nothing leaves AWS: the bundle download and the image pushes stay inside AWS over VPC endpoints the stack provisions for you (S3 for the bundle, ECR API/Docker for the images). There is no cross-account image pull and no registry credential to manage.
 
-| What | How it is pulled |
-|------|------------------|
-| **helm-deployer Lambda image** | Pulled cross-account into your deployment region at Lambda invocation time. |
-| **Helm charts** | The Lambda authenticates to our registry and runs `helm upgrade --install` for the Fundamental charts (CRDs, then infrastructure, then application) as OCI artifacts. |
-| **Pod images (including third-party)** | The EKS worker nodes pull every workload image, including third-party dependencies (ingress, load-balancer controller, database operator, monitoring), using the node IAM role. Third-party images are served through our registry's pull-through cache. |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ImageRegistryUri` | ECR prefix the platform pulls from. Leave empty to use your own account's registry (`<account>.dkr.ecr.<region>.amazonaws.com/marketplace`), which the importer populates. | *(empty)* |
+| `SkipImageImport` | Leave `false` for the automatic import. Set `true` only if you have loaded the bundle into your ECR yourself (see the optional pre-scan path below). | `false` |
+| `BundleS3Key` / `CraneS3Key` | S3 keys of the bundle and crane binary. Pre-filled for this version; you change them only on an upgrade, using the values Fundamental provides. | *(version-pinned)* |
 
-> **Note:** Granting your account access to our registry is handled by Fundamental. The only customer-side requirement is deploy permissions: admin (Option A) covers this automatically, and the service role (Option B) already includes the cross-account ECR pull permissions.
-
-**Model 2 (offline bundle): Load images into your own ECR first**
-
-If your environment cannot pull from Fundamental's registry (for example, due to network policy or security constraints), Fundamental provides an offline bundle artifact containing all images and Helm charts. You load the bundle into your own ECR, then set the `ImageRegistryUri` CloudFormation parameter to your ECR prefix. Every image reference in the deployment follows that prefix, so the deployment is fully self-contained in your account.
-
-This is a manual pre-step before deploying or upgrading. See the [Image Bundle Guide](./image-bundle-guide.md) for detailed instructions.
-
-The `ImageRegistryUri` parameter accepts an ECR repository prefix (for example, `<CUSTOMER_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental`). Leave it empty to use the default cross-account pull from Fundamental's registry.
+**Optional - pre-scan the images first.** If your security process requires scanning every image before it reaches your cluster, ask Fundamental for the bundle, load it into your ECR yourself with the included loader, then deploy with `SkipImageImport=true`. The stack then skips the importer and uses the images you already loaded. See the [Image Bundle Guide](./image-bundle-guide.md).
 
 > **Note:** Service-role customers updating from a pre-EKS version must refresh the deploy role before upgrading to v1.2.0 or later. See the [Upgrade Guide](./update-guide.md).
 
@@ -206,12 +200,12 @@ Users running the deployment need this minimal policy to use the service role:
 
 ### 2. Required Information
 
-Before deploying, collect the following:
+The platform needs **no required inputs beyond a stack name** (`DeploymentName`): it creates its own VPC and loads its own images. The following are **optional** and only needed if your client applications run in a separate VPC that must reach the private API (see [Networking](#networking)):
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 |
-| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 |
+| Parameter | Description | Example | Required? |
+|-----------|-------------|---------|-----------|
+| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 | Optional |
+| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 | Optional (required if `ConsumerVpc1Id` set) |
 
 ### 3. Stack Configuration (Optional)
 

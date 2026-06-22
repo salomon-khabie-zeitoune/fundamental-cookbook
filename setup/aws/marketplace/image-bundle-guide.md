@@ -1,135 +1,116 @@
-# Image Bundle Guide
+# Image Bundle Guide (optional pre-scan / manual load)
 
-This guide is for deployments where your environment **cannot pull images directly from Fundamental's registry**. In this model, Fundamental provides an offline bundle artifact containing all container images. You load the bundle into your own Amazon ECR, then point the CloudFormation stack at your registry.
+> **You usually do NOT need this guide.** By default the platform loads all images into your own ECR **automatically** at deploy time (the image-importer Lambda). Follow this guide only if you want to **scan every image yourself before it reaches your cluster**, or your security process otherwise requires loading the images manually. After loading them yourself, you deploy with `SkipImageImport=true` so the stack skips the automatic importer.
 
-> **When to use this guide:** If Fundamental has told you to use the offline bundle, or if your network policy prevents cross-account ECR pulls, follow this guide before deploying or upgrading. If you are using the default cross-account pull model, skip this guide.
+This is the same bundle the importer Lambda uses; the only difference is that *you* run the loader instead of the stack.
 
 ## Prerequisites
 
 - AWS CLI installed and configured for your account
-- skopeo installed (see Step 1)
-- Sufficient IAM permissions to push images to ECR (and `ecr:CreateRepository` if repositories do not exist yet)
-- The offline bundle S3 link provided by Fundamental (format: an S3 pre-signed URL or `s3://` path)
+- `crane` installed (see Step 1)
+- IAM permissions to create ECR repositories and push images (`ecr:CreateRepository`, `ecr:GetAuthorizationToken`, and the layer/put-image actions)
+- The offline bundle S3 link provided by Fundamental (a pre-signed URL or an `s3://` path)
 
-## Step 1: Install skopeo
+## Step 1: Install crane
 
-`skopeo` copies OCI images between registries and local directories without requiring a Docker daemon.
+`crane` copies OCI images and artifacts between registries and local layouts without a Docker daemon. It is the same tool the loader script uses.
 
 **macOS:**
 
 ```bash
-brew install skopeo
+brew install crane
 ```
 
-**Linux (Debian/Ubuntu):**
+**Linux:**
 
 ```bash
-sudo apt-get update && sudo apt-get install -y skopeo
-```
-
-**Linux (RHEL/Amazon Linux 2023):**
-
-```bash
-sudo dnf install -y skopeo
+VERSION=v0.20.2
+curl -fsSL -o crane.tar.gz \
+  "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+sudo tar -xzf crane.tar.gz -C /usr/local/bin crane
 ```
 
 Verify:
 
 ```bash
-skopeo --version
+crane version
 ```
 
-## Step 2: Download the Bundle
+## Step 2: Download and extract the bundle
 
-Fundamental will provide a pre-signed S3 URL or an `s3://` path for the bundle tarball. Download it to your local machine or a bastion with network access to ECR.
-
-**Using a pre-signed HTTPS URL (recommended for one-time download):**
+Fundamental provides a pre-signed URL or an `s3://` path for the bundle tarball.
 
 ```bash
+# Pre-signed HTTPS URL:
 curl -L -o fundamental-marketplace-1.2.0.tar.gz "<PRE_SIGNED_URL>"
-```
 
-**Using the AWS CLI with an `s3://` path:**
+# or, with an s3:// path:
+aws s3 cp s3://fundamental-ec2-marketplace-bundles/1.2.0/fundamental-marketplace-1.2.0.tar.gz .
 
-```bash
-aws s3 cp s3://<BUNDLE_BUCKET>/<VERSION>/fundamental-marketplace-1.2.0.tar.gz .
-```
-
-> Replace `<PRE_SIGNED_URL>`, `<BUNDLE_BUCKET>`, and `<VERSION>` with the values provided by Fundamental.
-
-Extract the archive:
-
-```bash
 tar -xzf fundamental-marketplace-1.2.0.tar.gz
 ```
 
-## Step 3: Log In to ECR
+> Replace `<PRE_SIGNED_URL>` / the version with the values Fundamental provides.
+
+The archive extracts to `bundle/` containing `INDEX.txt`, an `images/` directory (one OCI layout per image), and `restore-bundle.sh`.
+
+## Step 3: (Optional) Scan the images
+
+This is the reason to use this path. Each image is a standard OCI layout under `bundle/images/<name>/`, so you can point your scanner at them locally before anything is pushed. For example, with Trivy:
+
+```bash
+for d in bundle/images/*/; do
+  trivy image --input "$d" || true
+done
+```
+
+Use whichever scanner your organization standardizes on (Trivy, Grype, Amazon Inspector after push, etc.). Proceed only once the images meet your policy.
+
+## Step 4: Load the images into your ECR
+
+The bundle ships `restore-bundle.sh`, which logs `crane` in to your ECR, creates each repository, and pushes every image preserving its path and tag. Pass the **full registry URI including the `/marketplace` prefix** - this is exactly the value you will give CloudFormation as `ImageRegistryUri`.
 
 ```bash
 export ACCOUNT_ID=<ACCOUNT_ID>
-export REGION=<REGION>
-export ECR_PREFIX=fundamental  # or any prefix you prefer
+export REGION=<REGION>          # e.g. us-west-1
 
-aws ecr get-login-password --region $REGION \
-  | skopeo login --username AWS --password-stdin \
-    ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
-```
-
-> Replace `<ACCOUNT_ID>` with your AWS account ID and `<REGION>` with your deployment region (for example, `us-west-1`).
-
-ECR repositories are created automatically on first push if your IAM policy includes `ecr:CreateRepository` -- no need to pre-create them.
-
-## Step 4: Run the Restore Script
-
-The bundle includes a `restore-bundle.sh` script that mirrors every image from the extracted bundle into your ECR, preserving the full image path and tag.
-
-```bash
-./bundle/restore-bundle.sh \
-  --ecr ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com \
-  --prefix ${ECR_PREFIX} \
+cd bundle
+./restore-bundle.sh \
+  --registry-uri ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/marketplace \
   --region ${REGION}
 ```
 
-The script pushes each image to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<ECR_PREFIX>/marketplace/<path>:<tag>`. When it finishes, it prints the exact `ImageRegistryUri` value to use in the next step.
+Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/marketplace/<path>:<tag>`. When it finishes, the script prints the exact `ImageRegistryUri` and `SkipImageImport` values to set.
 
-> **Note:** skopeo must be installed on the machine running this script. The bundle contains approximately 13 container images; total uncompressed size is approximately 20-30 GiB.
+> The bundle contains ~16 images/charts; ~2.8 GiB compressed.
 
-## Step 5: Verify the Images Were Pushed
-
-List repositories to confirm images are present:
+## Step 5: Verify the images were pushed
 
 ```bash
 aws ecr describe-repositories \
   --region $REGION \
-  --query 'repositories[?starts_with(repositoryName, `'"${ECR_PREFIX}"'`)].repositoryName' \
+  --query 'repositories[?starts_with(repositoryName, `marketplace/`)].repositoryName' \
   --output table
-```
 
-Spot-check a specific image:
-
-```bash
 aws ecr list-images \
-  --repository-name ${ECR_PREFIX}/marketplace/temporalio/server \
+  --repository-name marketplace/dockerhub/temporalio/server \
   --region $REGION \
   --output table
 ```
 
-You should see at least one image tag listed.
+You should see ~16 `marketplace/*` repositories, each with at least one tag.
 
-## Step 6: Set the ImageRegistryUri Parameter
+## Step 6: Deploy with the importer skipped
 
-When deploying or upgrading the CloudFormation stack, set the `ImageRegistryUri` parameter to:
+When you launch (or upgrade) the CloudFormation stack, set:
 
-```
-<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<ECR_PREFIX>/marketplace
-```
+| Parameter | Value |
+|-----------|-------|
+| `SkipImageImport` | `true` |
+| `ImageRegistryUri` | `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/marketplace` |
 
-For example:
+For example, `ImageRegistryUri = 123456789012.dkr.ecr.us-west-1.amazonaws.com/marketplace`.
 
-```
-123456789012.dkr.ecr.us-west-1.amazonaws.com/fundamental/marketplace
-```
+Every image reference in the template is built as `${ImageRegistryUri}/<path>:<tag>`, so `${ImageRegistryUri}/dockerhub/temporalio/server:1.31.0` resolves to exactly where `restore-bundle.sh` placed it. With `SkipImageImport=true`, the stack does not run the importer Lambda and goes straight to deploying from your pre-loaded registry.
 
-Every image reference in the CloudFormation template is built as `${ImageRegistryUri}/<path>:<tag>`, so `${ImageRegistryUri}/temporalio/server:1.31.0` resolves to `123456789012.dkr.ecr.us-west-1.amazonaws.com/fundamental/marketplace/temporalio/server:1.31.0` -- exactly where `restore-bundle.sh` placed it.
-
-> **On upgrade:** When upgrading to a new Fundamental version, repeat Steps 2-5 with the new bundle tarball before updating the CloudFormation stack. See the [Upgrade Guide](./update-guide.md) for the full upgrade workflow.
+> **On upgrade:** repeat Steps 2-5 with the new bundle Fundamental provides, then update the stack. See the [Upgrade Guide](./update-guide.md).

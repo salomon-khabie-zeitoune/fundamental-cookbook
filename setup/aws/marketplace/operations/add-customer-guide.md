@@ -6,70 +6,56 @@ This note describes how to onboard a new customer account to the Fundamental Pla
 
 ## Overview
 
-There are two models depending on whether the customer can pull from Fundamental's ECR:
+Customers never pull from Fundamental's ECR. Each deployment loads its images into the **customer's own ECR** at deploy time (the image-importer Lambda) from an offline bundle we publish to S3. Onboarding a customer is therefore a single Terraform change that grants their account:
 
-| Customer type | Action needed |
-|---------------|---------------|
-| **Can pull from our ECR** | Add their AWS account ID to the marketplace allow-list in Terraform |
-| **Cannot pull from our ECR** | Send them the offline bundle (no Terraform change needed) |
+- **AMI launch permission** for the platform's hardened AMIs, and
+- **cross-account read** on the producer S3 buckets (CloudFormation templates, encrypted model artifacts, and the **image bundle**) so their importer Lambda can fetch the bundle.
+
+Both come from one source of truth.
 
 ---
 
-## Model 1: Cross-account ECR pull
+## Step 1: Get the customer's AWS account ID
 
-### Step 1: Get the customer's AWS account ID
+The customer provides their 12-digit AWS account ID. Do not guess or derive it.
 
-The customer provides their AWS account ID (12-digit number). Do not guess or derive it from other sources.
+## Step 2: Add the account to `customers.hcl` in fun-infra-terraform
 
-### Step 2: Add the account to the allow-list in fun-infra-terraform
+The single source of truth is `live/research/customers.hcl`:
 
-The ECR resource policy that grants cross-account pull access is managed in `fun-infra-terraform`. Locate the marketplace customer account list (it is in the research ECR configuration, scoped to `marketplace/*` repositories only) and add the new account ID.
-
-The permission granted is limited to pulling from the `marketplace/` namespace only. Customers cannot list or pull from any other path in the registry.
-
-Raise a PR, get it reviewed, and apply via the normal CI pipeline.
-
-### Step 3: Confirm the customer can pull
-
-Ask the customer to run a test pull:
-
-```bash
-aws ecr get-login-password --region <REGION> \
-  | docker login --username AWS --password-stdin \
-    954976309480.dkr.ecr.<REGION>.amazonaws.com
-
-docker pull 954976309480.dkr.ecr.<REGION>.amazonaws.com/marketplace/helm-deployer:<VERSION>
+```hcl
+locals {
+  marketplace_customer_account_ids = [
+    "889081505507", # aws team demo - do not remove
+    "297464765986", # ADP - do not remove
+    "<NEW_ACCOUNT_ID>", # <customer label>
+  ]
+}
 ```
 
-If this succeeds, the account is correctly allow-listed. The customer can then proceed with the [Deployment Guide](../deployment-guide.md) without setting `ImageRegistryUri`.
+This list feeds the `ec2-marketplace` module's `customer_accounts`, which grants the new account both the AMI launch permission and read access on the marketplace S3 buckets (including `fundamental-ec2-marketplace-bundles`). It does **not** grant any ECR access - none is needed.
+
+Raise a PR, get it reviewed, and apply via the normal CI pipeline. One `terraform apply` propagates the new account to the AMI permissions (primary + replica regions) and every marketplace bucket policy.
+
+## Step 3: Confirm the grant
+
+After apply, confirm the account is in the AMI launch permissions and the bundle-bucket policy. The customer then proceeds with the [Deployment Guide](../deployment-guide.md) using the defaults - the importer pulls the bundle and loads their ECR automatically. No `ImageRegistryUri` change is required.
 
 ---
 
-## Model 2: Offline bundle
+## Optional: pre-scan / manual-load customers
 
-If the customer cannot or will not pull from Fundamental's registry, no Terraform change is needed.
+If a customer's security process requires scanning the images before they reach their cluster, they still need the Step 2 grant (so they can read the bundle from S3). Additionally:
 
-### Step 1: Generate or locate the bundle for the target version
+1. Optionally provide a pre-signed S3 URL for the bundle tarball (instead of relying on their account's bucket read).
+2. Direct them to the [Image Bundle Guide](../image-bundle-guide.md): they load the bundle into their own ECR, scan it, then deploy with `SkipImageImport=true` and `ImageRegistryUri` set to their ECR prefix.
 
-The offline bundle for v1.2.0 is a tarball produced with `imgpkg push --as-tar`. Confirm with the team that the bundle for the required version exists in the designated S3 location.
-
-### Step 2: Share the bundle download link
-
-Provide the customer with:
-
-- A pre-signed S3 URL for the bundle tarball (valid for a reasonable period, typically 7 days), or
-- An `s3://` path if the customer has direct S3 access to the shared bucket.
-
-Do not share the raw S3 path publicly. Use pre-signed URLs for external delivery.
-
-### Step 3: Direct the customer to the bundle guide
-
-The customer follows the [Image Bundle Guide](../image-bundle-guide.md) to load the images into their own ECR and then proceeds with the [Deployment Guide](../deployment-guide.md) setting `ImageRegistryUri` to their ECR prefix.
+No additional Terraform change beyond Step 2.
 
 ---
 
 ## Notes
 
-- Keep a record of which accounts are on the ECR allow-list. The source of truth is the Terraform config, but a short internal log (a comment in the Terraform file or a private doc) helps audit over time.
-- If a customer cancels their subscription, remove their account ID from the allow-list in the next convenient Terraform cycle.
-- The cross-account pull scope is limited to `marketplace/*`. Customers cannot access any other Fundamental ECR repositories.
+- The source of truth for who is onboarded is `live/research/customers.hcl`. Keep the inline `# label` comments accurate - they record who each account is.
+- If a customer cancels, remove their account ID from `customers.hcl` in the next convenient Terraform cycle; the next apply revokes the AMI permission and bucket read.
+- Customers are granted no ECR access at all; every image lives in their own account after the importer runs.
