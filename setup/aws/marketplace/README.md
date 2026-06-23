@@ -11,3 +11,4 @@ Deploy the Fundamental Platform into your AWS environment via AWS Marketplace an
 | [Upgrade Guide](update-guide.md) | Chart/image updates (new bundle + chart versions) and full delete-and-recreate upgrade paths |
 | [Image Bundle Guide](image-bundle-guide.md) | Optional: load the image bundle into your own ECR yourself (to pre-scan images first). By default the platform loads it automatically. |
 | [CloudFormation Deploy Role](cloudformation-deploy-role/) | IAM service role for deploying the platform |
+| [Cluster Debug Access](cluster-debug-access/) | Temporary `kubectl` access to the private EKS cluster over AWS Systems Manager (no SSH, VPN, or NAT) |
