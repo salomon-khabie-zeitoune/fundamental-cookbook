@@ -82,7 +82,7 @@ cd bundle
 
 Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental/<path>:<tag>`. When it finishes, the script prints the exact `ImageRegistryUri` and `SkipImageImport` values to set.
 
-> The bundle contains ~16 images/charts; ~2.8 GiB compressed.
+> The bundle contains the full platform image/chart set (Fundamental charts + helm-deployer + Temporal, database operator, ingress, load-balancer controller, and the monitoring stack); ~4.5 GiB compressed.
 
 ## Step 5: Verify the images were pushed
 
@@ -98,7 +98,7 @@ aws ecr list-images \
   --output table
 ```
 
-You should see ~16 `fundamental/*` repositories, each with at least one tag.
+You should see the full set of `fundamental/*` repositories, each with at least one tag.
 
 ## Step 6: Deploy with the importer skipped
 

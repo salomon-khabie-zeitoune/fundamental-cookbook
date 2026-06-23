@@ -208,12 +208,17 @@ Users running the deployment need this minimal policy to use the service role:
 
 ### 2. Required Information
 
-The platform creates its own VPC and loads its own images, but you **must** provide one Consumer VPC (where your applications call the private API from) - see [Networking](#networking). If you do not have one, create it first (commands in the Networking section).
+The platform creates its own VPC and loads its own images, but a handful of parameters have **no default and must be supplied**. Collect these before launching:
 
-| Parameter | Description | Example | Required? |
-|-----------|-------------|---------|-----------|
-| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 | **Required** |
-| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 | **Required** |
+| Parameter | Description | Example | Notes |
+|-----------|-------------|---------|-------|
+| `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
+| `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | Option B: the service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Option A: your admin role/user ARN. Keep it **different** from `EksAdminRoleArn`. |
+| `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
+| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | `subnet-111,subnet-222` | |
+| `DeploymentName` | Name prefix for resources/buckets (default `fundamental`) | `fundamental` | **Max 19 characters** (it is embedded in S3 bucket names bound by the 63-char limit). Use a fresh name for a delete-and-recreate. |
+
+> For the **complete** parameter list (with every default and a ready-to-edit `params.json` for CLI deploys), see the **[Parameters Reference](./parameters-reference.md)**.
 
 ### 3. Stack Configuration (Optional)
 
@@ -281,6 +286,22 @@ This opens the CloudFormation console with the template pre-filled. From here:
 8. If using the service role (Option B), under **Permissions**, select the `FundamentalPlatform-CFServiceRole`
 9. Check the box acknowledging IAM resource creation
 10. Click **Create stack**
+
+#### Alternative: Deploy via the AWS CLI (`params.json`)
+
+If you prefer to deploy from the CLI (for automation or repeatability), use a `params.json` file instead of the Console form. Copy the **template URL** shown on the Marketplace **Launch CloudFormation** page, fill in the required values, and run `create-stack`:
+
+```bash
+aws cloudformation create-stack \
+  --stack-name fundamental \
+  --region "$DEPLOYMENT_REGION" \
+  --template-url "<MARKETPLACE_TEMPLATE_URL>" \
+  --parameters file://params.json \
+  --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole   # Option B only
+```
+
+A minimal `params.json` and the full parameter list are in the **[Parameters Reference](./parameters-reference.md)**. For an admin deploy (Option A), omit `--role-arn` and set `CloudFormationExecutionRoleArn` to your admin role/user ARN.
 
 ### 5. Verify Deployment
 
