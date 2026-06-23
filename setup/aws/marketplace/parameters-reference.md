@@ -11,7 +11,7 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | Parameter | What it is | How to get the value |
 |-----------|-----------|----------------------|
 | `AmiId` | The platform AMI used by all three EC2 compute tiers (API, ModelCPU, ModelGPU). | Fundamental shares this AMI with your account (launch permission), one per region. The Console Launch page pre‑fills it for the region you pick; for a CLI deploy, copy that value from the Launch page or ask Fundamental for the AMI ID in your region. |
-| `CloudFormationExecutionRoleArn` | The IAM role CloudFormation runs as. The stack also grants this role **EKS cluster‑admin** so it can bootstrap the cluster's access entries. | **Option B (service role):** the `FundamentalPlatform-CFServiceRole` ARN from `create-role.sh` — pass the **same** ARN as `--role-arn`. **Option A (admin):** your admin role/user ARN. |
+| `CloudFormationExecutionRoleArn` | The IAM role CloudFormation runs as. The stack also grants this role **EKS cluster‑admin** so it can bootstrap the cluster's access entries. | The `FundamentalPlatform-CFServiceRole` ARN from `create-role.sh` — pass the **same** ARN as `--role-arn` (Console: the **Permissions** field). |
 | `ConsumerVpc1Id` | The VPC where your client applications run and call the private API from. **At least one Consumer VPC is required.** | An existing VPC in your account, or create a minimal one (see the Deployment Guide → Networking). |
 | `ConsumerVpc1SubnetIds` | Comma‑separated subnet IDs in that VPC that receive the API endpoint. | Subnets in `ConsumerVpc1Id`. No internet egress required. |
 
@@ -131,8 +131,7 @@ aws cloudformation create-stack \
   --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole
 ```
 
-- **Option A (admin):** omit `--role-arn` (CloudFormation uses your identity), and set `CloudFormationExecutionRoleArn` to your admin role/user ARN.
-- **Option B (service role):** pass `--role-arn` and set `CloudFormationExecutionRoleArn` to the **same** service‑role ARN.
+Pass the `FundamentalPlatform-CFServiceRole` ARN as `--role-arn` and set `CloudFormationExecutionRoleArn` (in `params.json`) to the **same** ARN. Deploying with the service role (rather than as a plain admin) is what keeps the EKS access‑entry bootstrap reliable.
 
 Track progress with:
 
@@ -141,4 +140,4 @@ aws cloudformation describe-stack-events --stack-name fundamental --region "$DEP
   --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[LogicalResourceId,ResourceStatusReason]' --output table
 ```
 
-The deployment takes roughly 40–60 minutes (EKS + the image import + the Helm install run sequentially). See the [Deployment Guide](./deployment-guide.md) for verification and connecting your application.
+The deployment takes roughly **45 minutes** (EKS + the image import + the Helm install run sequentially). See the [Deployment Guide](./deployment-guide.md) for verification and connecting your application.

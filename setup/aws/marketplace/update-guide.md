@@ -140,7 +140,7 @@ There is no automatic migration of model artifacts between stack versions.
 
 ## Upgrading from pre-v1.2.0 (service-role deployments)
 
-If you deployed using the CloudFormation service role (Option B) on a version prior to v1.2.0, the role needs additional permissions for the EKS tier added in v1.2.0. Before upgrading:
+If you deployed using the CloudFormation service role on a version prior to v1.2.0, the role needs additional permissions for the EKS tier added in v1.2.0. Before upgrading:
 
 1. Re-run `cloudformation-deploy-role/create-role.sh` from the cookbook, or re-apply the policy files in `cloudformation-deploy-role/policies/`.
 2. Then proceed with Path B (delete-and-recreate) above.

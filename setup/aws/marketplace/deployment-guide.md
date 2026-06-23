@@ -98,7 +98,7 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **API** | `m7i.4xlarge` | `m7i.2xlarge` |
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
-| **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | `m7i.2xlarge` |
+| **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | — |
 
 #### Container Images
 
@@ -132,23 +132,16 @@ export FUNDAMENTAL_VERSION=1.2.0
 
 > **Supported Regions:** `us-west-1`, `us-east-1`
 
-### 1. Permissions
+### 1. Permissions — Create the CloudFormation Service Role
 
-You have two options for permissions:
-
-#### Option A: Deploy as Admin
-
-If you have access to your AWS account's root user or an IAM user with `AdministratorAccess`, you can deploy directly without additional setup.
-
-#### Option B: Use CloudFormation Service Role
-
-We provide a pre-configured CloudFormation Service Role that allows deployment without needing direct permissions on all underlying AWS resources.
+Always deploy with the provided **CloudFormation Service Role**. CloudFormation assumes this role to create the platform, and the role is granted EKS cluster-admin so the stack can bootstrap the cluster's access entries. Deploying this way (rather than as a plain admin user) is what keeps the EKS access-entry bootstrap reliable, so it is the supported path for every deployment.
 
 **How it works:**
 
-- You create an IAM role that CloudFormation assumes during deployment
-- Users only need permission to run CloudFormation and pass the role
-- The role has the permissions required to create the platform resources
+- You create an IAM role that CloudFormation assumes during deployment.
+- Users only need permission to run CloudFormation and pass the role.
+- The role has the permissions required to create the platform resources.
+- You pass this role's ARN both as the stack's `CloudFormationExecutionRoleArn` parameter **and** as the deploy command's `--role-arn` (Console: the **Permissions** field).
 
 **To create the service role:**
 
@@ -213,7 +206,7 @@ The platform creates its own VPC and loads its own images, but a handful of para
 | Parameter | Description | Example | Notes |
 |-----------|-------------|---------|-------|
 | `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
-| `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | Option B: the service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Option A: your admin role/user ARN. Keep it **different** from `EksAdminRoleArn`. |
+| `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
 | `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
 | `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | `subnet-111,subnet-222` | |
 | `DeploymentName` | Name prefix for resources/buckets (default `fundamental`) | `fundamental` | **Max 19 characters** (it is embedded in S3 bucket names bound by the 63-char limit). Use a fresh name for a delete-and-recreate. |
@@ -283,7 +276,7 @@ This opens the CloudFormation console with the template pre-filled. From here:
 
 6. Fill in the parameters from Step 2 (VPC, Subnets, etc.)
 7. Customize compute tiers and capacity blocks as needed (see Step 3)
-8. If using the service role (Option B), under **Permissions**, select the `FundamentalPlatform-CFServiceRole`
+8. Under **Permissions**, select the `FundamentalPlatform-CFServiceRole` (created in Step 1)
 9. Check the box acknowledging IAM resource creation
 10. Click **Create stack**
 
@@ -298,10 +291,12 @@ aws cloudformation create-stack \
   --template-url "<MARKETPLACE_TEMPLATE_URL>" \
   --parameters file://params.json \
   --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
-  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole   # Option B only
+  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole
 ```
 
-A minimal `params.json` and the full parameter list are in the **[Parameters Reference](./parameters-reference.md)**. For an admin deploy (Option A), omit `--role-arn` and set `CloudFormationExecutionRoleArn` to your admin role/user ARN.
+Set `CloudFormationExecutionRoleArn` (in `params.json`) to the **same** service-role ARN you pass as `--role-arn`. A minimal `params.json` and the full parameter list are in the **[Parameters Reference](./parameters-reference.md)**.
+
+> **Deployment time:** the stack takes roughly **45 minutes** to reach `CREATE_COMPLETE` — the private EKS cluster, the image import into your ECR, and the Helm install run sequentially. This is expected; let it run.
 
 ### 5. Verify Deployment
 
@@ -418,8 +413,8 @@ For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-
 
 ### Stack creation fails with "Access Denied"
 
-- Ensure you're using an admin user or the CloudFormation service role
-- If using the service role, verify it was created successfully with `./create-role.sh`
+- Verify the `FundamentalPlatform-CFServiceRole` was created successfully with `./create-role.sh`, and that you selected it under **Permissions** (Console) or passed it as `--role-arn` (CLI)
+- Confirm `CloudFormationExecutionRoleArn` is set to that same role ARN
 
 ### Stack creation fails with IAM errors
 
