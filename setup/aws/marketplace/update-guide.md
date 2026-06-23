@@ -8,14 +8,16 @@ There are two distinct upgrade paths depending on what changed:
 
 | Path | When to use |
 |------|-------------|
-| [Path A: Chart-only update](#path-a-chart-only-update) | Updating application versions (Temporal, database operator, platform app) without changing infrastructure or the CloudFormation template |
-| [Path B: Full upgrade (delete and recreate)](#path-b-full-upgrade-delete-and-recreate) | Upgrading to a new platform version that includes infrastructure changes, a new AMI, or a new CloudFormation template |
+| [Path A: Chart / image update (in-place)](#path-a-chart--image-update-no-template-change) | **Recommended** for chart and image version bumps (Temporal, database operator, platform app) on a running stack, without changing infrastructure or the CloudFormation template. This is the supported in-place upgrade path. |
+| [Path B: Full upgrade (delete and recreate)](#path-b-full-upgrade-delete-and-recreate) | The safe fallback, and the only path for a new platform version that includes infrastructure changes, a new AMI, or a new CloudFormation template. Deploys a fresh stack under a new `DeploymentName`; trained-model S3 data can be retained. |
 
 ---
 
 ## Path A: Chart / image update (no template change)
 
-Application versions ship as a **new image bundle** plus matching **chart-version** values, all exposed as CloudFormation parameters. You apply them with a normal **stack update** - no new template, no EC2 instance or EKS-node replacement.
+This is the **supported, recommended** path for chart and image version bumps on a running stack. Application versions ship as a **new image bundle** plus matching **chart-version** values, all exposed as CloudFormation parameters. You apply them with a normal **stack update** - no new template, no EC2 instance or EKS-node replacement.
+
+The in-place upgrade has been hardened so a stack update is reliable to repeat: it now recovers from a Helm release left in a stuck pending state (rather than wedging the next upgrade), caps oversized error responses so a large failure message does not break the update signal, and redeploys when the helm-deployer Lambda image tag (`HelmDeployerImageTag`) changes.
 
 | Parameter | Controls |
 |-----------|----------|
@@ -47,7 +49,7 @@ Application versions ship as a **new image bundle** plus matching **chart-versio
 
 ## Path B: Full Upgrade (Delete and Recreate)
 
-Full upgrades (new CloudFormation template version, new AMI, infrastructure changes) use a **delete-and-recreate** approach. There is no in-place migration path for infrastructure-level upgrades.
+This is the **safe fallback**, and the required path for infrastructure-level upgrades (new CloudFormation template version, new AMI, infrastructure changes), which use a **delete-and-recreate** approach. There is no in-place migration path for infrastructure-level upgrades. You deploy a fresh stack under a new `DeploymentName`; trained-model S3 data can be retained (see [Retaining trained-model data](#retaining-trained-model-data)).
 
 > **Important:** This process will recreate all infrastructure. Temporal workflow history, the in-cluster Postgres database, and all ephemeral state will be lost. If you have trained models stored in the deployment's S3 bucket and want to retain them, see [Retaining trained-model data](#retaining-trained-model-data) below before deleting the stack.
 

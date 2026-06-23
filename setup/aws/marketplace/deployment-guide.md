@@ -99,6 +99,9 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
 | **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | — |
+| **EKS heavy-compute node** (optional) | `m7i.4xlarge` × 1 | `m7i.8xlarge`, `r7i.2xlarge`, `r7i.4xlarge` |
+
+The **heavy-compute node** is a separate, dedicated EKS node group, tainted `dedicated=heavy-compute:NoSchedule`, that the stack adds **in addition to** the two general worker nodes. It defaults to a single `m7i.4xlarge` (16 vCPU / 64 GiB) of reserved capacity for future heavy workloads and stays empty until a workload opts in by tolerating the taint. It is optional, controlled by the `EnableEksHeavyNodeGroup` toggle (default on), and the reserved node adds to your compute cost. Turn it off if you do not need it.
 
 #### Container Images
 
@@ -257,6 +260,9 @@ The platform includes a **private, fully managed EKS cluster** that runs its Kub
 | `EksNodeDesiredCapacity` | Number of EKS worker nodes (one per AZ recommended) | `1` |
 | `EksNodeMinCapacity` / `EksNodeMaxCapacity` | Auto Scaling bounds for the worker nodes | `1` |
 | `EksNodeRootVolumeSize` | Root EBS volume size (GiB) per node | `100` |
+| `EnableEksHeavyNodeGroup` | Add the dedicated, tainted heavy-compute node group (reserved for future heavy workloads). Adds cost. | `true` |
+| `EksHeavyNodeInstanceType` | Instance type for the heavy-compute node | `m7i.4xlarge` |
+| `EksHeavyNodeDesiredCapacity` / `EksHeavyNodeMinCapacity` / `EksHeavyNodeMaxCapacity` | Auto Scaling bounds for the heavy-compute node group | `1` |
 | `EksKubernetesVersion` | EKS control-plane version | `1.33` |
 | `EksAdminRoleArn` | *(Optional)* ARN of an IAM role to grant `kubectl` (cluster-admin) access. Leave empty if you don't need direct cluster access. | *(empty)* |
 
