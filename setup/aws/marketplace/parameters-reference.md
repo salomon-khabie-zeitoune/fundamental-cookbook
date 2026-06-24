@@ -87,8 +87,8 @@ These are version‑pinned in each release. The Console Launch page fills them i
 | `ImageRegistryUri` | *(empty)* | Empty = the importer loads images into **your own** ECR (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`) and the platform pulls from there. |
 | `SkipImageImport` | `false` | `false` = automatic import (default). `true` only if you loaded the bundle into your ECR yourself first (pre‑scan path — see the Image Bundle Guide). |
 | `BundleS3Key` / `CraneS3Key` | version‑pinned | Offline bundle + crane binary S3 keys. Bump on an upgrade to ship new app/chart versions without changing template code. |
-| `FunCrdChartVersion` / `FunInfraChartVersion` / `FunAppChartVersion` | `1.1.0` / `1.3.3` / `1.1.0` | Umbrella chart versions. Match the bundle. |
-| `HelmDeployerImageTag` | `1.2.0-arm64` | helm‑deployer Lambda image tag (tracks the bundle). |
+| `FunCrdChartVersion` / `FunInfraChartVersion` / `FunAppChartVersion` | `1.1.0` / `1.3.3` / `1.2.0` | Umbrella chart versions. Match the bundle. |
+| `HelmDeployerImageTag` | `1.2.2-arm64` | helm‑deployer Lambda image tag (tracks the bundle). |
 
 ---
 
