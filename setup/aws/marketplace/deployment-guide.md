@@ -209,7 +209,7 @@ The platform creates its own VPC and loads its own images, but a handful of para
 | `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
 | `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
 | `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | `subnet-111,subnet-222` | |
-| `DeploymentName` | Name prefix for resources/buckets (default `fundamental`) | `fundamental` | **Max 19 characters** (it is embedded in S3 bucket names bound by the 63-char limit). Use a fresh name for a delete-and-recreate. |
+| `DeploymentName` | Name prefix for resources/buckets (default `fundamental`) | `fundamental` | **Max 19 characters** (it is embedded in S3 bucket names bound by the 63-char limit). |
 
 > For the **complete** parameter list (with every default and a ready-to-edit `params.json` for CLI deploys), see the **[Parameters Reference](./parameters-reference.md)**.
 
