@@ -23,7 +23,7 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
-| `DeploymentName` | `fundamental` | Prefixes resource and S3 bucket names. **Max 19 characters** — it is embedded in S3 bucket names like `<name>-nexus-trained-models-<region>-<account>`, which must stay within the 63‑char S3 limit. |
+| `DeploymentName` | `fundamental` | Prefixes resource and S3 bucket names. **Max 19 characters**: it is embedded in S3 bucket names like `<name>-nexus-trained-models-<region>-<account>`, which must stay within the 63‑char S3 limit. |
 | `EksAdminRoleArn` | *(empty)* | Optional IAM role granted `kubectl` cluster‑admin via an EKS access entry. Leave empty if you don't need direct cluster access (not required to use the platform). Access is private‑endpoint only — must originate inside the platform VPC. |
 
 ---
