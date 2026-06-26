@@ -99,6 +99,9 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
 | **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | — |
+| **EKS additional node** | `m7i.4xlarge` × 1 | `m7i.8xlarge`, `r7i.2xlarge`, `r7i.4xlarge` |
+
+The platform also runs **one additional EKS node** for heavier workloads, on top of the two worker nodes. It is enabled by default; you can turn it off (`EnableEksHeavyNodeGroup=false`) if you do not need the extra capacity. Check with Fundamental before disabling it.
 
 #### Container Images
 
@@ -257,6 +260,9 @@ The platform includes a **private, fully managed EKS cluster** that runs its Kub
 | `EksNodeDesiredCapacity` | Number of EKS worker nodes (one per AZ recommended) | `1` |
 | `EksNodeMinCapacity` / `EksNodeMaxCapacity` | Auto Scaling bounds for the worker nodes | `1` |
 | `EksNodeRootVolumeSize` | Root EBS volume size (GiB) per node | `100` |
+| `EnableEksHeavyNodeGroup` | Run one additional EKS node for heavier workloads. Enabled by default; turn off if you do not need the extra capacity (check with Fundamental first). | `true` |
+| `EksHeavyNodeInstanceType` | Instance type for the additional node | `m7i.4xlarge` |
+| `EksHeavyNodeDesiredCapacity` / `EksHeavyNodeMinCapacity` / `EksHeavyNodeMaxCapacity` | Auto Scaling bounds for the additional node | `1` |
 | `EksKubernetesVersion` | EKS control-plane version | `1.33` |
 | `EksAdminRoleArn` | *(Optional)* ARN of an IAM role to grant `kubectl` (cluster-admin) access. Leave empty if you don't need direct cluster access. | *(empty)* |
 
