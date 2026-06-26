@@ -82,7 +82,9 @@ cd bundle
 
 Each image is pushed to `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/fundamental/<path>:<tag>`. When it finishes, the script prints the exact `ImageRegistryUri` and `SkipImageImport` values to set.
 
-> The bundle contains the full platform image/chart set (Fundamental charts + helm-deployer + Temporal, database operator, ingress, load-balancer controller, and the monitoring stack); ~4.5 GiB compressed.
+> **Note:** These repositories live in **your own account**, so the platform's image-importer and helm-deployer pull from them using their execution-role permissions. No ECR repository policy changes are required, and the stack does not modify your repository policies.
+
+> The bundle contains the full platform image and chart set; ~4.5 GiB compressed.
 
 ## Step 5: Verify the images were pushed
 

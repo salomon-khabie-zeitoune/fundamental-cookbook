@@ -68,9 +68,6 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | `EksNodeDesiredCapacity` | `1` | Nodes per AZ group. |
 | `EksNodeMinCapacity` / `EksNodeMaxCapacity` | `1` / `1` | Auto Scaling bounds. |
 | `EksNodeRootVolumeSize` | `100` | Root EBS GiB per node. |
-| `EnableEksHeavyNodeGroup` | `true` | Add the dedicated heavy‑compute node group: a separate, tainted (`dedicated=heavy-compute:NoSchedule`) node reserved for future heavy workloads, in addition to the general worker nodes. Stays empty until a workload tolerates the taint. Set `false` to drop it (saves the reserved node's cost). |
-| `EksHeavyNodeInstanceType` | `m7i.4xlarge` | Instance type for the heavy‑compute node. Allowed: `m7i.4xlarge`, `m7i.8xlarge`, `r7i.2xlarge`, `r7i.4xlarge`. |
-| `EksHeavyNodeDesiredCapacity` / `EksHeavyNodeMinCapacity` / `EksHeavyNodeMaxCapacity` | `1` / `1` / `1` | Auto Scaling bounds for the heavy‑compute node group. |
 | `EksKubernetesVersion` | `1.33` | Control‑plane version. |
 | `PrivateEksClusterEndpoint` | `true` | Private‑only API endpoint. |
 | `EksServiceIpv4Cidr` | `172.21.0.0/16` | Kubernetes service CIDR. |

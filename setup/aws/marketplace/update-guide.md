@@ -8,26 +8,27 @@ There are two distinct upgrade paths depending on what changed:
 
 | Path | When to use |
 |------|-------------|
-| [Path A: Chart / image update (in-place)](#path-a-chart--image-update-no-template-change) | **Recommended** for chart and image version bumps (Temporal, database operator, platform app) on a running stack, without changing infrastructure or the CloudFormation template. This is the supported in-place upgrade path. |
-| [Path B: Full upgrade (delete and recreate)](#path-b-full-upgrade-delete-and-recreate) | The safe fallback, and the only path for a new platform version that includes infrastructure changes, a new AMI, or a new CloudFormation template. Deploys a fresh stack under a new `DeploymentName`; trained-model S3 data can be retained. |
+| [Path A: In-place update](#path-a-in-place-update) | **The standard path for nearly all updates** - new application/bundle versions, and most infrastructure or template changes - applied as a CloudFormation stack update on your running stack. No EC2 or EKS-node replacement in the common case. |
+| [Path B: Delete and recreate](#path-b-delete-and-recreate) | **Last-resort fallback**, only when an in-place update isn't feasible (for example, a first-time migration). Deploys a fresh stack under a new `DeploymentName`; trained-model S3 data can be retained. |
 
 ---
 
-## Path A: Chart / image update (no template change)
+## Path A: In-place update
 
-This is the **supported, recommended** path for chart and image version bumps on a running stack. Application versions ship as a **new image bundle** plus matching **chart-version** values, all exposed as CloudFormation parameters. You apply them with a normal **stack update** - no new template, no EC2 instance or EKS-node replacement.
+This is the **standard, recommended** path for almost all updates, applied as a CloudFormation **stack update** on your running stack. Two cases are covered:
 
-The in-place upgrade has been hardened so a stack update is reliable to repeat: it now recovers from a Helm release left in a stuck pending state (rather than wedging the next upgrade), caps oversized error responses so a large failure message does not break the update signal, and redeploys when the helm-deployer Lambda image tag (`HelmDeployerImageTag`) changes.
+- **Application / bundle version bump (no template change).** A new platform version ships as a new image bundle plus matching chart-version values, all exposed as CloudFormation parameters. You update those parameters against your existing template; no EC2 instance or EKS-node replacement.
+- **Application + infrastructure change (new template).** When a release also changes AWS infrastructure, Fundamental provides a new CloudFormation template. You apply it with **Replace existing template**; in the common case this is still an in-place stack update, and CloudFormation changes only the resources that differ.
 
 | Parameter | Controls |
 |-----------|----------|
 | `BundleS3Key` | The offline image bundle to load (contains the images the new chart versions need) |
 | `CraneS3Key` | The crane binary shipped with that bundle |
 | `FunCrdChartVersion` | CRD chart version |
-| `FunInfraChartVersion` | Infrastructure chart version (Temporal, database, networking) |
-| `FunAppChartVersion` | Application chart version (the Fundamental platform app) |
+| `FunInfraChartVersion` | Infrastructure chart version |
+| `FunAppChartVersion` | Application chart version |
 
-**How it works:** when you change `BundleS3Key`, the image-importer step re-runs and loads the new bundle's images into your ECR; then the helm-deployer re-runs `helm upgrade --install` for the new chart versions. No EC2 instances or EKS nodes are replaced.
+**How it works:** when you change `BundleS3Key`, the image-importer step re-runs and loads the new bundle's images into your ECR; then the helm-deployer re-runs `helm upgrade --install` for the new chart versions.
 
 > **Important:** a chart-version bump must be paired with the matching `BundleS3Key`/`CraneS3Key`. Fundamental hands you all of these values together for each release. If you change only the chart versions without the new bundle, the new images will not be in your ECR and the upgrade will fail to pull them.
 
@@ -35,23 +36,23 @@ The in-place upgrade has been hardened so a stack update is reliable to repeat: 
 
 1. *(Pre-scan / `SkipImageImport=true` customers only)* load the new bundle into your ECR first, per the [Image Bundle Guide](./image-bundle-guide.md).
 
-2. **AWS CloudFormation Console** - your Fundamental Platform stack - **Update** - **Use existing template** - **Next**.
+2. **AWS CloudFormation Console** - your Fundamental Platform stack - **Update**. Choose **Use existing template** for an application-only update, or **Replace existing template** and paste the new template URL when Fundamental provides one. Click **Next**.
 
-3. Set the new values Fundamental provided: `BundleS3Key`, `CraneS3Key`, and the relevant `Fun*ChartVersion`(s). *(Pre-scan customers: skip the two bundle keys, set only the chart versions, leave `SkipImageImport=true`.)*
+3. Set the new values Fundamental provided: `BundleS3Key`, `CraneS3Key`, and the relevant `Fun*ChartVersion`(s). For a template update, also set any new infrastructure parameters and the new `AmiId` if provided. *(Pre-scan customers: skip the two bundle keys, set only the chart versions, leave `SkipImageImport=true`.)*
 
 4. Click **Next** through the screens - review the change set - **Submit**.
 
 5. Monitor the **Events** tab until `UPDATE_COMPLETE`. The importer log `/aws/lambda/<DeploymentName>-image-importer` shows the new load; then the charts roll.
 
-> **Note:** This path does not touch the EC2 compute tiers or the EKS control plane - only the bundle import and the Kubernetes workloads.
+> **Note:** In the application-only case this does not touch the EC2 compute tiers or the EKS control plane - only the bundle import and the Kubernetes workloads.
 
 ---
 
-## Path B: Full Upgrade (Delete and Recreate)
+## Path B: Delete and recreate
 
-This is the **safe fallback**, and the required path for infrastructure-level upgrades (new CloudFormation template version, new AMI, infrastructure changes), which use a **delete-and-recreate** approach. There is no in-place migration path for infrastructure-level upgrades. You deploy a fresh stack under a new `DeploymentName`; trained-model S3 data can be retained (see [Retaining trained-model data](#retaining-trained-model-data)).
+This is the **last-resort fallback**, used only when an in-place update (Path A) isn't feasible - in practice, rarely. One example is a first-time migration where standing up a fresh stack under a new name is simpler than reconciling the existing one. You deploy a new stack under a new `DeploymentName`; trained-model S3 data can be retained (see [Retaining trained-model data](#retaining-trained-model-data)).
 
-> **Important:** This process will recreate all infrastructure. Temporal workflow history, the in-cluster Postgres database, and all ephemeral state will be lost. If you have trained models stored in the deployment's S3 bucket and want to retain them, see [Retaining trained-model data](#retaining-trained-model-data) below before deleting the stack.
+> **Important:** This process recreates all infrastructure. Temporal workflow history, the in-cluster Postgres database, and all ephemeral state will be lost. If you have trained models stored in the deployment's S3 bucket and want to retain them, see [Retaining trained-model data](#retaining-trained-model-data) below before deleting the stack.
 
 ### Overview
 
@@ -145,6 +146,6 @@ There is no automatic migration of model artifacts between stack versions.
 If you deployed using the CloudFormation service role on a version prior to v1.2.0, the role needs additional permissions for the EKS tier added in v1.2.0. Before upgrading:
 
 1. Re-run `cloudformation-deploy-role/create-role.sh` from the cookbook, or re-apply the policy files in `cloudformation-deploy-role/policies/`.
-2. Then proceed with Path B (delete-and-recreate) above.
+2. Then update the stack using Path A (in-place). Use Path B only if an in-place update isn't feasible.
 
 Skipping the role refresh causes the upgrade to fail with `AccessDenied` on EKS resources.
