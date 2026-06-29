@@ -209,6 +209,7 @@ The platform creates its own VPC and loads its own images, but a handful of para
 
 | Parameter | Description | Example | Notes |
 |-----------|-------------|---------|-------|
+| `FunBundleVersion` | The release version to deploy (selects the offline bundle, crane binary, and `manifest.json`). | `1.2.0` | **Required - no default.** The Console Launch page pre-fills it for the version you launched; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides; you change it only on an upgrade. |
 | `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
 | `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
 | `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
@@ -239,6 +240,18 @@ The platform consists of three compute tiers:
 | `ModelCpuDesiredCapacity` | Number of CPU model instances |
 | `ModelGpuInstanceType` | Instance type for GPU tier |
 | `ModelGpuDesiredCapacity` | Number of GPU instances |
+
+#### Model / Service Versions
+
+Each release ships with **default** API, ModelCPU, and ModelGPU artifact versions, so you do not normally set these - deploying a given `FunBundleVersion` pulls a known-good, matched set. You only override them to pin a specific version (e.g. a hotfix Fundamental asks you to run). Each is an S3 path of the form `<service>/<version>/`.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ApiS3Path` | Override the API service artifact version | *(release default)* |
+| `ModelCpuS3Path` | Override the ModelCPU (controller) artifact version | *(release default)* |
+| `ModelGpuS3Path` | Override the ModelGPU (inference) artifact version | *(release default)* |
+
+> Leave these empty to use the release defaults. Only set one when Fundamental gives you a specific version string to pin.
 
 #### Capacity Blocks
 
