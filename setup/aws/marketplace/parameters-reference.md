@@ -105,10 +105,11 @@ A single parameter, `FunBundleVersion`, selects the released version of everythi
 
 ## `params.json` template (CLI deploy)
 
-A minimal 0‑to‑1 file — fill the four required values (and `DeploymentName`/`EksAdminRoleArn` if you want). Everything omitted uses the template default.
+A minimal 0‑to‑1 file — fill the five required values (`FunBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`); `DeploymentName` defaults to `fundamental` and `EksAdminRoleArn` is optional. Everything omitted uses the template default.
 
 ```json
 [
+  { "ParameterKey": "FunBundleVersion",               "ParameterValue": "REPLACE_WITH_RELEASE_VERSION" },
   { "ParameterKey": "DeploymentName",                 "ParameterValue": "fundamental" },
   { "ParameterKey": "AmiId",                          "ParameterValue": "ami-REPLACE_ME" },
   { "ParameterKey": "CloudFormationExecutionRoleArn", "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole" },
@@ -118,7 +119,7 @@ A minimal 0‑to‑1 file — fill the four required values (and `DeploymentName
 ]
 ```
 
-> To also customize compute/EKS, add the relevant rows from the tables above (e.g. `EksNodeInstanceType`, `ModelGpuInstanceType`, `CapacityReservationId`). You normally do **not** set `FunBundleVersion` on a fresh deploy; the template default pins the correct release. Add it (and only it) when Fundamental gives you a new version to upgrade to.
+> To also customize compute/EKS, add the relevant rows from the tables above (e.g. `EksNodeInstanceType`, `ModelGpuInstanceType`, `CapacityReservationId`). `FunBundleVersion` is **required and has no default**, so set it on every deploy (it is the first entry above), using the release version string Fundamental provides; on an upgrade this is the value you change.
 
 ### Deploy command
 
