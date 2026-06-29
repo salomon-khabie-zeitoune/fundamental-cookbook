@@ -109,15 +109,16 @@ You do **not** host images, supply registry credentials, or run any manual image
 
 **How it works (automatic - this is the default):**
 
-- Fundamental publishes a single **offline image bundle** (all images + Helm charts), a small `crane` binary, and a `manifest.json` to an S3 bucket your account is granted read access to, all under a `<FunBundleVersion>/` prefix. The `FunBundleVersion` parameter selects which release to deploy; the stack derives the bundle and crane keys from it and reads the chart and image versions from the manifest.
-- A native **image-importer Lambda** - created by the stack and running inside the platform VPC - downloads the bundle, creates the ECR repositories in your account, and pushes every image: the Fundamental charts (CRDs, infrastructure, application), the helm-deployer image, and all third-party dependencies (Temporal, database operator, ingress, load-balancer controller, monitoring).
+- Fundamental publishes **two offline image bundles** - an **infra** bundle (CRDs, cluster infrastructure, the helm-deployer image, and all third-party dependencies) and an **app** bundle (the application and its images) - plus a small `crane` binary and a `manifest.json` per bundle, to an S3 bucket your account is granted read access to, each under its own `<version>/` prefix. The `FunInfraBundleVersion` and `FunAppBundleVersion` parameters select which release of each to deploy; the stack derives the bundle/crane/manifest keys from them and reads the chart and image versions from the two manifests.
+- A native **image-importer Lambda** - created by the stack and running inside the platform VPC - downloads **both** bundles, creates the ECR repositories in your account, and pushes every image: the Fundamental charts (CRDs, infrastructure, application), the helm-deployer image, and all third-party dependencies (Temporal, database operator, ingress, load-balancer controller, monitoring).
 - It runs **before** the rest of the platform, so by the time the Kubernetes workloads start, every image already exists in your ECR. The helm-deployer Lambda and the EKS nodes then pull from your own registry.
 
 Nothing leaves AWS: the bundle download and the image pushes stay inside AWS over VPC endpoints the stack provisions for you (S3 for the bundle, ECR API/Docker for the images). There is no cross-account image pull and no registry credential to manage.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `FunBundleVersion` | The single knob that selects the release. The stack derives the offline bundle and crane binary S3 keys from it and reads the chart and helm-deployer image versions from the bundle's `manifest.json`. Pre-filled for this version; you change it only on an upgrade, using the version string Fundamental provides. | *(version-pinned)* |
+| `FunInfraBundleVersion` | Selects the **infra** bundle release (CRDs + infrastructure + helm-deployer + third-party images). The stack derives the infra bundle/crane/manifest S3 keys from it. Pre-filled for this version; change it on an infra upgrade. | *(version-pinned)* |
+| `FunAppBundleVersion` | Selects the **app** bundle release (application + app images). The stack derives the app bundle/manifest S3 keys from it. Pre-filled for this version; change it on an app upgrade. | *(version-pinned)* |
 | `BundleS3Bucket` | S3 bucket holding the bundle, crane binary, and `manifest.json`. Defaults to the shared bundle bucket your account is granted read access to. | *(shared bundle bucket)* |
 | `ImageRegistryUri` | ECR prefix the platform pulls from. Leave empty to use your own account's registry (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`), which the importer populates. | *(empty)* |
 | `SkipImageImport` | Leave `false` for the automatic import. Set `true` only if you have loaded the bundle into your ECR yourself (see the optional pre-scan path below). | `false` |
@@ -209,7 +210,8 @@ The platform creates its own VPC and loads its own images, but a handful of para
 
 | Parameter | Description | Example | Notes |
 |-----------|-------------|---------|-------|
-| `FunBundleVersion` | The release version to deploy (selects the offline bundle, crane binary, and `manifest.json`). | `1.2.0` | **Required - no default.** The Console Launch page pre-fills it for the version you launched; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides; you change it only on an upgrade. |
+| `FunInfraBundleVersion` | The **infra** bundle version to deploy. | `1.3.1` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
+| `FunAppBundleVersion` | The **app** bundle version to deploy. | `1.0.0` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
 | `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
 | `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
 | `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
@@ -243,7 +245,7 @@ The platform consists of three compute tiers:
 
 #### Model / Service Versions
 
-Each release ships with **default** API, ModelCPU, and ModelGPU artifact versions, so you do not normally set these - deploying a given `FunBundleVersion` pulls a known-good, matched set. You only override them to pin a specific version (e.g. a hotfix Fundamental asks you to run). Each is an S3 path of the form `<service>/<version>/`.
+Each release ships with **default** API, ModelCPU, and ModelGPU artifact versions, so you do not normally set these - deploying a given release (the infra + app bundle versions) pulls a known-good, matched set. You only override them to pin a specific version (e.g. a hotfix Fundamental asks you to run). Each is an S3 path of the form `<service>/<version>/`.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|

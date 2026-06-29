@@ -79,16 +79,17 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 
 ## Images & version
 
-A single parameter, `FunBundleVersion`, selects the released version of everything. The Console Launch page pre‑fills it for the version you pick; for a CLI deploy you set it to the released version string Fundamental gives you.
+Two parameters, `FunInfraBundleVersion` and `FunAppBundleVersion`, select the released version of everything - the infra and app bundles respectively. The Console Launch page pre‑fills them for the version you pick; for a CLI deploy you set them to the released version strings Fundamental gives you.
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
-| `FunBundleVersion` | version‑pinned | The one knob that selects the release. Everything about **what** runs is resolved from this single value: the offline image bundle, the crane binary, the umbrella chart versions (CRD, infrastructure, application), and the helm‑deployer image. The stack derives the bundle and crane S3 keys from it (`<FunBundleVersion>/fundamental-marketplace-<FunBundleVersion>.tar.gz` and `<FunBundleVersion>/crane-linux-arm64`) and reads the chart versions and helm‑deployer image details from the bundle's `manifest.json` (`s3://<bundle-bucket>/<FunBundleVersion>/manifest.json`) at deploy time. To move to a new release, change only this value (see the [Upgrade Guide](./update-guide.md)). |
+| `FunInfraBundleVersion` | version‑pinned | Selects the **infra** bundle (CRDs, infrastructure, the helm‑deployer image, and all third‑party images). The stack derives its bundle/crane/manifest S3 keys from it (`<v>/fundamental-infra-<v>.tar.gz`, `<v>/crane-linux-arm64`, `<v>/manifest.json`) and reads the crd/infra chart versions + helm‑deployer image details from that manifest. Change it on an infra upgrade (see the [Upgrade Guide](./update-guide.md)). |
+| `FunAppBundleVersion` | version‑pinned | Selects the **app** bundle (fundamental-application + app images). The stack derives its bundle/manifest S3 keys from it (`<v>/fundamental-app-<v>.tar.gz`, `<v>/manifest.json`) and reads the application chart version from that manifest. Change it on an app upgrade. |
 | `BundleS3Bucket` | *(shared bundle bucket)* | S3 bucket holding the offline bundle, crane binary, and `manifest.json`. Defaults to the shared bundle bucket Fundamental grants your account read access to; override only if Fundamental tells you to. |
 | `ImageRegistryUri` | *(empty)* | Empty = the importer loads images into **your own** ECR (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`) and the platform pulls from there. |
 | `SkipImageImport` | `false` | `false` = automatic import (default). `true` only if you loaded the bundle into your ECR yourself first (pre‑scan path — see the Image Bundle Guide). |
 
-> The chart versions and helm‑deployer image are no longer separate parameters. They live in the bundle's `manifest.json`, so a given `FunBundleVersion` always pins a self‑consistent set. The Kubernetes control‑plane version is also fixed internally (currently **1.36**) and is not a customer‑settable parameter.
+> The chart versions and helm‑deployer image are no longer separate parameters. They live in each bundle's `manifest.json`, so a given pair of bundle versions always pins a self‑consistent set. The Kubernetes control‑plane version is also fixed internally (currently **1.36**) and is not a customer‑settable parameter.
 
 ---
 
@@ -105,11 +106,12 @@ A single parameter, `FunBundleVersion`, selects the released version of everythi
 
 ## `params.json` template (CLI deploy)
 
-A minimal 0‑to‑1 file — fill the five required values (`FunBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`); `DeploymentName` defaults to `fundamental` and `EksAdminRoleArn` is optional. Everything omitted uses the template default.
+A minimal 0‑to‑1 file — fill the six required values (`FunInfraBundleVersion`, `FunAppBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`); `DeploymentName` defaults to `fundamental` and `EksAdminRoleArn` is optional. Everything omitted uses the template default.
 
 ```json
 [
-  { "ParameterKey": "FunBundleVersion",               "ParameterValue": "REPLACE_WITH_RELEASE_VERSION" },
+  { "ParameterKey": "FunInfraBundleVersion",          "ParameterValue": "REPLACE_WITH_INFRA_VERSION" },
+  { "ParameterKey": "FunAppBundleVersion",            "ParameterValue": "REPLACE_WITH_APP_VERSION" },
   { "ParameterKey": "DeploymentName",                 "ParameterValue": "fundamental" },
   { "ParameterKey": "AmiId",                          "ParameterValue": "ami-REPLACE_ME" },
   { "ParameterKey": "CloudFormationExecutionRoleArn", "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole" },
@@ -119,7 +121,7 @@ A minimal 0‑to‑1 file — fill the five required values (`FunBundleVersion`,
 ]
 ```
 
-> To also customize compute/EKS, add the relevant rows from the tables above (e.g. `EksNodeInstanceType`, `ModelGpuInstanceType`, `CapacityReservationId`). `FunBundleVersion` is **required and has no default**, so set it on every deploy (it is the first entry above), using the release version string Fundamental provides; on an upgrade this is the value you change.
+> To also customize compute/EKS, add the relevant rows from the tables above (e.g. `EksNodeInstanceType`, `ModelGpuInstanceType`, `CapacityReservationId`). `FunInfraBundleVersion` and `FunAppBundleVersion` are **required and have no default**, so set both on every deploy (the first two entries above), using the release version strings Fundamental provides; on an upgrade you bump whichever bundle changed.
 
 ### Deploy command
 
