@@ -428,7 +428,7 @@ Choose the option that fits your use case:
 | **B. Use Provided Role** | You don't have an existing role (Lambda, ECS, etc.) | Use `ApiGatewayExecuteRoleArn` directly |
 | **C. Use Instance Profile** | EC2 instances | Attach `ApiGatewayExecuteInstanceProfileArn` when launching |
 
-For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-ec2).
+For a quick test, see [Appendix: Quick Test](#appendix-quick-test).
  
 ---
 
@@ -451,144 +451,169 @@ For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-
 
 ---
 
-## Appendix: Quick Test with EC2
+## Appendix: Quick Test
 
-This section shows how to create a test EC2 instance and verify the deployment works.
+Two ways to verify the deployment end to end. The helper script is the fastest;
+the manual CLI steps are there if you would rather run every command yourself.
 
-### 1. Get Stack Outputs
+Either way you need your **Cloudsmith token** to install the SDK (it is not on
+public PyPI). Fundamental issues a unique token to each customer - ask your
+Fundamental contact for yours.
+
+### Option A: Helper script (recommended)
+
+The scripts in [`model-test-access/`](./model-test-access/) (full details in its
+`README.md`) launch a small jumpbox in your consumer VPC, install the SDK, and
+drop you into a shell where you run a smoke test against the private API - the
+same IAM-authenticated path through the API Gateway that your application uses.
+
+**Prerequisites**
+
+- An SSH client, or - for the default SSM connection mode - the AWS CLI
+  **Session Manager plugin** installed locally. (The script supports both; see
+  `ACCESS_MODE` in the README.)
+- A consumer VPC whose `execute-api` endpoint is registered with the API (the
+  VPC your application runs in).
+- Your Cloudsmith token.
+
+**Run it** from the `model-test-access/` directory:
 
 ```bash
-# Set your stack name
-export STACK_NAME=fundamental
-
-# Get API endpoint
-export API_URL=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --region $DEPLOYMENT_REGION \
-  --query 'Stacks[0].Outputs[?OutputKey==`RestApiEndpoint`].OutputValue' \
-  --output text)
-echo "API URL: $API_URL"
-
-# Get instance profile ARN for EC2
-export INSTANCE_PROFILE_ARN=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --region $DEPLOYMENT_REGION \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayExecuteInstanceProfileArn`].OutputValue' \
-  --output text)
-echo "Instance Profile ARN: $INSTANCE_PROFILE_ARN"
+CLOUDSMITH_API_KEY=<your-token> AWS_PROFILE=<your-profile> \
+  ./start-model-test.sh <stack-name> <region>
 ```
 
-### 2. Create SSH Key Pair
+When the shell opens, run the bundled smoke test:
 
 ```bash
-aws ec2 create-key-pair \
-  --key-name fundamental-test-key \
-  --region $DEPLOYMENT_REGION \
-  --query 'KeyMaterial' \
-  --output text > fundamental-test-key.pem
+nexus-test
+```
 
+**Success criteria:** the test prints a `trained_model_id` and an `accuracy`
+value. Tear everything down when done:
+
+```bash
+AWS_PROFILE=<your-profile> ./stop-model-test.sh <stack-name> <region>
+```
+
+### Option B: Do it yourself (AWS CLI)
+
+Prefer not to run our script? These are the equivalent steps by hand. Everything
+happens in your own account: you launch an EC2 in your consumer VPC, attach the
+API invoke role the stack created, install the SDK, and run a short test.
+
+#### 1. Get stack outputs
+
+```bash
+export STACK_NAME=fundamental          # your DeploymentName
+export DEPLOYMENT_REGION=us-west-1
+
+export API_URL=$(aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME --region $DEPLOYMENT_REGION \
+  --query 'Stacks[0].Outputs[?OutputKey==`RestApiEndpoint`].OutputValue' --output text)
+
+export INSTANCE_PROFILE_ARN=$(aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME --region $DEPLOYMENT_REGION \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayExecuteInstanceProfileArn`].OutputValue' --output text)
+
+echo "API URL:          $API_URL"
+echo "Instance profile: $INSTANCE_PROFILE_ARN"
+```
+
+#### 2. Create an SSH key pair
+
+```bash
+aws ec2 create-key-pair --key-name fundamental-test-key \
+  --region $DEPLOYMENT_REGION --query 'KeyMaterial' --output text > fundamental-test-key.pem
 chmod 400 fundamental-test-key.pem
 ```
 
-### 3. Create Client EC2 Instance
+#### 3. Launch a client EC2 in your consumer VPC
 
-Launch an EC2 in your consumer subnet to interact with the API:
-
-> **Note:** Replace `<your-vpc-id>` and `<your-subnet-id>` with your Consumer VPC and subnet IDs.
+Use a **public subnet** of the consumer VPC (the VPC whose `execute-api` endpoint
+is registered with the API) so you can SSH in. Replace `<your-vpc-id>` and
+`<your-public-subnet-id>`.
 
 ```bash
-# Get latest Amazon Linux 2023 AMI
 export AMI_ID=$(aws ssm get-parameter \
-  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 \
-  --region $DEPLOYMENT_REGION \
-  --query 'Parameter.Value' \
-  --output text)
+  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+  --region $DEPLOYMENT_REGION --query 'Parameter.Value' --output text)
 
-# Create security group (replace <your-vpc-id>)
+# Security group allowing SSH from your IP only
+export MY_IP=$(curl -s https://checkip.amazonaws.com)
 export CLIENT_SG=$(aws ec2 create-security-group \
-  --region $DEPLOYMENT_REGION \
-  --group-name fundamental-client-sg \
-  --description "Fundamental client access" \
-  --vpc-id <your-vpc-id> \
-  --query 'GroupId' \
-  --output text)
+  --region $DEPLOYMENT_REGION --group-name fundamental-client-sg \
+  --description "Fundamental client access" --vpc-id <your-vpc-id> \
+  --query 'GroupId' --output text)
+aws ec2 authorize-security-group-ingress --region $DEPLOYMENT_REGION \
+  --group-id $CLIENT_SG --protocol tcp --port 22 --cidr ${MY_IP}/32
 
-# Note: Replace 0.0.0.0/0 with your CIDR to limit access to the EC2 instances. You can quickly check your
-# local IP by running curl -s checkip.amazonaws.com
-aws ec2 authorize-security-group-ingress \
-  --region $DEPLOYMENT_REGION \
-  --group-id $CLIENT_SG \
-  --protocol tcp \
-  --port 22 \
-  --cidr 0.0.0.0/0
-
-# Launch instance (replace <your-subnet-id>)
 export INSTANCE_ID=$(aws ec2 run-instances \
-  --image-id $AMI_ID \
-  --instance-type t3.large \
-  --subnet-id <your-subnet-id> \
-  --security-group-ids $CLIENT_SG \
+  --image-id $AMI_ID --instance-type t3.large \
+  --subnet-id <your-public-subnet-id> --security-group-ids $CLIENT_SG \
+  --associate-public-ip-address \
   --iam-instance-profile Arn=$INSTANCE_PROFILE_ARN \
   --key-name fundamental-test-key \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=fundamental-client}]' \
-  --region $DEPLOYMENT_REGION \
-  --query 'Instances[0].InstanceId' \
-  --output text)
+  --region $DEPLOYMENT_REGION --query 'Instances[0].InstanceId' --output text)
 
-# Wait for instance and get public IP
 aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
-export CLIENT_IP=$(aws ec2 describe-instances \
-  --instance-ids $INSTANCE_ID \
+export CLIENT_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID \
   --region $DEPLOYMENT_REGION \
-  --query 'Reservations[0].Instances[0].PublicIpAddress' \
-  --output text)
-echo "Client instance IP: $CLIENT_IP"
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+echo "Client IP: $CLIENT_IP"
 ```
 
-### 4. SSH into Client Instance
+#### 4. SSH into the instance
 
 ```bash
-ssh -i "fundamental-test-key.pem" ec2-user@$CLIENT_IP
+ssh -i fundamental-test-key.pem ec2-user@$CLIENT_IP
 ```
 
-### 5. Install SDK and Run Test
+#### 5. Install the SDK and run a test
 
-From the client instance:
+On the instance, set your values (the `API_URL` printed in step 1, your region,
+and your Cloudsmith token), then run:
 
 ```bash
-# Install Python and SDK
-sudo dnf update -y && sudo dnf install python3.11 python3.11-pip -y
-pip3.11 install fundamental-client[aws-marketplace]
+export AWS_REGION=<your-region>
+export FUNDAMENTAL_API_URL=<your-api-url>
 
-# Create test script (replace DEPLOYMENT_REGION and API_URL with your values)
-cat << EOF > test_fundamental.py
+sudo dnf install -y python3.11 python3.11-pip
+pip3.11 install \
+  --extra-index-url "https://token:<your-cloudsmith-token>@dl.cloudsmith.io/basic/fundamental/fundamental-client/python/simple/" \
+  "fundamental-client[aws-marketplace]==0.15.0" numpy pandas
+
+cat > test_fundamental.py <<'EOF'
+import os
 import numpy as np
 import pandas as pd
 import fundamental
 from fundamental import NEXUSClassifier, FundamentalAWSMarketplaceClient
 
 fundamental.set_client(FundamentalAWSMarketplaceClient(
-    aws_region="${DEPLOYMENT_REGION}",
-    api_url="${API_URL}"
+    aws_region=os.environ["AWS_REGION"],
+    api_url=os.environ["FUNDAMENTAL_API_URL"],
 ))
 
 model = NEXUSClassifier(mode="speed")
-
-# Simple test: Input 1 -> Output 0, Input 0 -> Output 1
-model.fit(
-    X=pd.DataFrame(np.array([[1], [0]])),
-    y=pd.Series(np.array([0, 1]))
-)
-print(f"Trained model ID: {model.trained_model_id_}")
-
-preds = model.predict(pd.DataFrame(np.array([[1], [0]])))
-print(f"Predictions: {preds}")
+model.fit(X=pd.DataFrame(np.array([[1], [0]])), y=pd.Series(np.array([0, 1])))
+print("Trained model ID:", model.trained_model_id_)
+print("Predictions:", model.predict(pd.DataFrame(np.array([[1], [0]]))))
 EOF
 
-# Run the test
 python3.11 test_fundamental.py
 ```
 
-**Success Criteria:**
+**Success criteria:** a `Trained model ID` followed by a prediction array (e.g.
+`[0 1]`).
 
-You should see output indicating a `Trained model ID` followed by a prediction array (e.g., `[0, 1]`).
+#### 6. Clean up
+
+```bash
+exit   # leave the SSH session
+aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
+aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
+aws ec2 delete-security-group --group-id $CLIENT_SG --region $DEPLOYMENT_REGION
+aws ec2 delete-key-pair --key-name fundamental-test-key --region $DEPLOYMENT_REGION
+```
