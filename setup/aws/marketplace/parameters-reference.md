@@ -1,6 +1,6 @@
 # Parameters Reference
 
-This is the complete reference for the CloudFormation parameters used to deploy the Fundamental Platform (v1.2.0), plus a ready‑to‑edit `params.json` for deploying from the AWS CLI. Most parameters have production‑ready defaults — a 0‑to‑1 deployment only requires the handful in the **Required** group below.
+This is the complete reference for the CloudFormation parameters used to deploy the Fundamental Platform (v1.3.0), plus a ready‑to‑edit `params.json` for deploying from the AWS CLI. Most parameters have production‑ready defaults — a 0‑to‑1 deployment only requires the handful in the **Required** group below.
 
 > The Console launch (via the Marketplace subscription) shows these same parameters as a form and pre‑fills version‑pinned values for you. Use this reference if you prefer the **CLI** (`params.json`) path, or to understand any parameter before changing it.
 
@@ -52,11 +52,26 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | `ApiDesiredCapacity` | `1` | API instance count. |
 | `ModelCpuInstanceType` | `c7i.48xlarge` | CPU model tier. |
 | `ModelCpuDesiredCapacity` | `1` | |
-| `ModelGpuInstanceType` | `p5en.48xlarge` | GPU inference tier. |
+| `ModelGpuInstanceType` | `p5en.48xlarge` | GPU inference tier. `p5en.48xlarge` is recommended for production; use `g4dn.8xlarge` or similar if `p5en` capacity is unavailable in your region. |
 | `ModelGpuDesiredCapacity` | `1` | |
+| `ModelOrchestrationInstanceType` | `m7i.8xlarge` | Temporal workflow worker (confidential compute). Allowed: `m7i.4xlarge`, `m7i.8xlarge`, `m7i.12xlarge`, `m5.8xlarge`. |
+| `ModelOrchestrationDesiredCapacity` | `1` | Set `0` to disable the Temporal worker tier entirely. |
 | `PreferredAvailabilityZone` | *(empty)* | AZ for GPU Capacity Block (e.g. `us-west-1a`). |
 | `CapacityReservationId` | *(empty)* | GPU Capacity Block reservation (e.g. `cr-1234567890abcdef0`). |
-| `ApiS3Path` / `ModelCpuS3Path` / `ModelGpuS3Path` | version‑pinned (API tier defaults to `ftm-api-service/0.0.180/`) | Override the artifact version per tier. Leave at the pinned default to use the versions shipped in this release. |
+| `ApiS3Path` / `ModelCpuS3Path` / `ModelGpuS3Path` / `ModelOrchestrationS3Path` | version‑pinned | Override the artifact version per tier. Leave at the pinned default. Only set when Fundamental gives you a specific version string. |
+
+### Optional: Split train/predict tiers
+
+For advanced deployments only — leave all at `false` for a standard deployment.
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `EnableModelCpuTrain` / `EnableModelCpuPredict` | `false` | Dedicated CPU fleet for training or inference. When enabled, replaces the legacy ModelCPU tier for that workload type. |
+| `ModelCpuTrainInstanceType` / `ModelCpuPredictInstanceType` | `c7i.48xlarge` | |
+| `ModelCpuTrainDesiredCapacity` / `ModelCpuPredictDesiredCapacity` | `1` | |
+| `EnableModelGpuTrain` / `EnableModelGpuPredict` | `false` | Dedicated GPU fleet for training or inference. |
+| `ModelGpuTrainInstanceType` / `ModelGpuPredictInstanceType` | `p5en.48xlarge` | |
+| `ModelGpuTrainDesiredCapacity` / `ModelGpuPredictDesiredCapacity` | `1` | |
 
 ---
 
@@ -106,7 +121,9 @@ Two parameters, `FunInfraBundleVersion` and `FunAppBundleVersion`, select the re
 
 ## `params.json` template (CLI deploy)
 
-A minimal 0‑to‑1 file — fill the six required values (`FunInfraBundleVersion`, `FunAppBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`); `DeploymentName` defaults to `fundamental` and `EksAdminRoleArn` is optional. Everything omitted uses the template default.
+Fill the six **required** values (`FunInfraBundleVersion`, `FunAppBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`). Everything else uses the template default. `DeploymentName` defaults to `fundamental`; `EksAdminRoleArn` is optional but strongly recommended so you can run `kubectl` from inside the VPC if needed.
+
+Override `ModelGpuInstanceType` when `p5en.48xlarge` capacity is not available in your region (e.g. use `g4dn.8xlarge` for testing).
 
 ```json
 [
@@ -116,12 +133,13 @@ A minimal 0‑to‑1 file — fill the six required values (`FunInfraBundleVersi
   { "ParameterKey": "AmiId",                          "ParameterValue": "ami-REPLACE_ME" },
   { "ParameterKey": "CloudFormationExecutionRoleArn", "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole" },
   { "ParameterKey": "ConsumerVpc1Id",                 "ParameterValue": "vpc-REPLACE_ME" },
-  { "ParameterKey": "ConsumerVpc1SubnetIds",          "ParameterValue": "subnet-REPLACE_ME" },
+  { "ParameterKey": "ConsumerVpc1SubnetIds",          "ParameterValue": "subnet-REPLACE_ME,subnet-REPLACE_ME_2" },
+  { "ParameterKey": "ModelGpuInstanceType",           "ParameterValue": "g4dn.8xlarge" },
   { "ParameterKey": "EksAdminRoleArn",                "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/<your-kubectl-role>" }
 ]
 ```
 
-> To also customize compute/EKS, add the relevant rows from the tables above (e.g. `EksNodeInstanceType`, `ModelGpuInstanceType`, `CapacityReservationId`). `FunInfraBundleVersion` and `FunAppBundleVersion` are **required and have no default**, so set both on every deploy (the first two entries above), using the release version strings Fundamental provides; on an upgrade you bump whichever bundle changed.
+> `FunInfraBundleVersion` and `FunAppBundleVersion` are **required with no default** — set both on every deploy using the version strings Fundamental provides. On an upgrade, bump whichever bundle changed. To customize EKS or enable split tiers, add those rows from the tables above.
 
 ### Deploy command
 

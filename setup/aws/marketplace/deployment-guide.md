@@ -2,7 +2,7 @@
 
 ## Part 1: Deploy Fundamental
 
-> **Platform version:** This guide covers **v1.2.0**, the minor release that introduces the fully managed, private EKS tier described below. If you are updating an existing deployment from an earlier (pre-EKS) version, follow the [Update Guide](./update-guide.md) instead. Service-role deployments must refresh the deploy role before updating to v1.2.0 or later.
+> **Platform version:** This guide covers **v1.3.0**, which adds the **ModelOrchestration** (Temporal worker) EC2 compute tier and optional split train/predict tiers for CPU and GPU workloads. If you are updating from an earlier version, follow the [Update Guide](./update-guide.md) instead. Service-role deployments must refresh the deploy role before updating.
 
 ### Prerequisites
 
@@ -97,11 +97,14 @@ Ensure your AWS account has capacity for the following instance types in your de
 |------|-------------|-------------|
 | **API** | `m7i.4xlarge` | `m7i.2xlarge` |
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
-| **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
+| **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge`, `g4dn.8xlarge` |
+| **ModelOrchestration** | `m7i.8xlarge` (1 instance) | `m7i.4xlarge`, `m7i.12xlarge` |
 | **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | — |
 | **EKS additional node** | `m7i.4xlarge` × 1 | `m7i.8xlarge`, `r7i.2xlarge`, `r7i.4xlarge` |
 
 The platform also runs **one additional EKS node** for heavier workloads, on top of the two worker nodes. It is enabled by default; you can turn it off (`EnableEksHeavyNodeGroup=false`) if you do not need the extra capacity. Check with Fundamental before disabling it.
+
+> **GPU instance availability:** `p5en.48xlarge` is recommended for production but may have limited capacity in some regions. Use `ModelGpuInstanceType=g4dn.8xlarge` for testing or when `p5en` capacity is not available.
 
 #### Container Images
 
@@ -226,32 +229,51 @@ The platform deploys with sensible defaults, but you can customize the configura
 
 #### Compute Tiers
 
-The platform consists of three compute tiers:
+The platform consists of four EC2 compute tiers:
 
 | Tier | Purpose | Default Instance | Default Count |
 |------|---------|-----------------|---------------|
 | **API** | Handles incoming API requests | `m7i.4xlarge` | 1 |
 | **ModelCPU** | Runs CPU-based model processing and orchestration | `c7i.48xlarge` | 1 |
 | **ModelGPU** | Runs GPU-accelerated inference workloads | `p5en.48xlarge` | 1 |
+| **ModelOrchestration** | Temporal workflow worker (confidential compute) | `m7i.8xlarge` | 1 |
 
-| Parameter | Description |
-|-----------|-------------|
-| `ApiInstanceType` | Instance type for API tier |
-| `ApiDesiredCapacity` | Number of API instances |
-| `ModelCpuInstanceType` | Instance type for CPU model tier |
-| `ModelCpuDesiredCapacity` | Number of CPU model instances |
-| `ModelGpuInstanceType` | Instance type for GPU tier |
-| `ModelGpuDesiredCapacity` | Number of GPU instances |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ApiInstanceType` | Instance type for API tier | `m7i.4xlarge` |
+| `ApiDesiredCapacity` | Number of API instances | `1` |
+| `ModelCpuInstanceType` | Instance type for CPU model tier | `c7i.48xlarge` |
+| `ModelCpuDesiredCapacity` | Number of CPU model instances | `1` |
+| `ModelGpuInstanceType` | Instance type for GPU tier | `p5en.48xlarge` |
+| `ModelGpuDesiredCapacity` | Number of GPU instances | `1` |
+| `ModelOrchestrationInstanceType` | Instance type for the Temporal worker tier | `m7i.8xlarge` |
+| `ModelOrchestrationDesiredCapacity` | Number of Temporal worker instances. Set `0` to disable this tier. | `1` |
+
+> **ModelOrchestration** runs the Temporal workflow worker inside the private VPC (confidential compute). It requires EKS to be deployed (the worker calls the in-cluster Temporal server). Set `ModelOrchestrationDesiredCapacity=0` to disable it if your deployment does not need Temporal workflows.
+
+#### Optional: Split Train/Predict Tiers
+
+For advanced deployments, the CPU and GPU tiers can each be split into separate **train** and **predict** fleets with independent instance types and sizes. When a split tier is enabled it **replaces** the corresponding legacy tier for that workload type. Leave these at their defaults (`false`) for a standard deployment.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `EnableModelCpuTrain` / `EnableModelCpuPredict` | Deploy a dedicated ModelCPU train or predict fleet | `false` |
+| `ModelCpuTrainInstanceType` / `ModelCpuPredictInstanceType` | Instance types for each fleet | `c7i.48xlarge` |
+| `ModelCpuTrainDesiredCapacity` / `ModelCpuPredictDesiredCapacity` | Fleet sizes | `1` |
+| `EnableModelGpuTrain` / `EnableModelGpuPredict` | Deploy a dedicated ModelGPU train or predict fleet | `false` |
+| `ModelGpuTrainInstanceType` / `ModelGpuPredictInstanceType` | Instance types for each GPU fleet | `p5en.48xlarge` |
+| `ModelGpuTrainDesiredCapacity` / `ModelGpuPredictDesiredCapacity` | Fleet sizes | `1` |
 
 #### Model / Service Versions
 
-Each release ships with **default** API, ModelCPU, and ModelGPU artifact versions, so you do not normally set these - deploying a given release (the infra + app bundle versions) pulls a known-good, matched set. You only override them to pin a specific version (e.g. a hotfix Fundamental asks you to run). Each is an S3 path of the form `<service>/<version>/`.
+Each release ships with **default** artifact versions baked into the template, so you do not normally set these. You only override them when Fundamental gives you a specific version string to pin (e.g. a hotfix). Each is an S3 path of the form `<service>/<version>/`.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `ApiS3Path` | Override the API service artifact version | *(release default)* |
 | `ModelCpuS3Path` | Override the ModelCPU (controller) artifact version | *(release default)* |
 | `ModelGpuS3Path` | Override the ModelGPU (inference) artifact version | *(release default)* |
+| `ModelOrchestrationS3Path` | Override the Temporal worker artifact version | *(release default)* |
 
 > Leave these empty to use the release defaults. Only set one when Fundamental gives you a specific version string to pin.
 
