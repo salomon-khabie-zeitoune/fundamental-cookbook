@@ -1,6 +1,6 @@
 # Upgrade Guide
 
-## Upgrading a Fundamental Platform Deployment (v1.2.0+)
+## Upgrading a Fundamental Platform Deployment (v2.0.0+)
 
 This guide covers how to upgrade a Fundamental Platform deployment that was deployed via AWS Marketplace and CloudFormation.
 
@@ -40,9 +40,9 @@ Two cases are covered, both applied as a CloudFormation **stack update** on your
 
 ---
 
-## Upgrading from pre-v1.2.0 (service-role deployments)
+## Upgrading from pre-v2.0.0 (service-role deployments)
 
-If you deployed using the CloudFormation service role on a version prior to v1.2.0, the role needs additional permissions for the EKS tier added in v1.2.0. Before upgrading:
+If you deployed using the CloudFormation service role on a version prior to v2.0.0, the role needs additional permissions for the EKS tier added in v2.0.0. Before upgrading:
 
 1. Re-run `cloudformation-deploy-role/create-role.sh` from the cookbook, or re-apply the policy files in `cloudformation-deploy-role/policies/`.
 2. Then update the stack in place as described above.

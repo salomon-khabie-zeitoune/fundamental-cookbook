@@ -2,7 +2,7 @@
 
 ## Part 1: Deploy Fundamental
 
-> **Platform version:** This guide covers **v1.3.0**, which adds the **ModelOrchestration** (Temporal worker) EC2 compute tier and optional split train/predict tiers for CPU and GPU workloads. If you are updating from an earlier version, follow the [Update Guide](./update-guide.md) instead. Service-role deployments must refresh the deploy role before updating.
+> **Platform version:** This guide covers **v2.0.0**, which adds the **ModelOrchestration** (Temporal worker) EC2 compute tier and optional split train/predict tiers for CPU and GPU workloads. If you are updating from an earlier version, follow the [Update Guide](./update-guide.md) instead. Service-role deployments must refresh the deploy role before updating.
 
 ### Prerequisites
 
@@ -128,14 +128,14 @@ Nothing leaves AWS: the bundle download and the image pushes stay inside AWS ove
 
 **Optional - pre-scan the images first.** If your security process requires scanning every image before it reaches your cluster, ask Fundamental for the bundle, load it into your ECR yourself with the included loader, then deploy with `SkipImageImport=true`. The stack then skips the importer and uses the images you already loaded. See the [Image Bundle Guide](./image-bundle-guide.md).
 
-> **Note:** Service-role customers updating from a pre-EKS version must refresh the deploy role before upgrading to v1.2.0 or later. See the [Upgrade Guide](./update-guide.md).
+> **Note:** Service-role customers updating from a pre-EKS version must refresh the deploy role before upgrading to v2.0.0 or later. See the [Upgrade Guide](./update-guide.md).
 
 ### Set Environment Variables
 
 ```bash
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export DEPLOYMENT_REGION=us-west-1
-export FUNDAMENTAL_VERSION=1.2.0
+export FUNDAMENTAL_VERSION=2.0.0
 ```
 
 > **Supported Regions:** `us-west-1`, `us-east-1`
@@ -213,8 +213,8 @@ The platform creates its own VPC and loads its own images, but a handful of para
 
 | Parameter | Description | Example | Notes |
 |-----------|-------------|---------|-------|
-| `FunInfraBundleVersion` | The **infra** bundle version to deploy. | `1.3.1` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
-| `FunAppBundleVersion` | The **app** bundle version to deploy. | `1.0.0` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
+| `FunInfraBundleVersion` | The **infra** bundle version to deploy. | `2.0.0` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
+| `FunAppBundleVersion` | The **app** bundle version to deploy. | `1.7.0` | **Required - no default.** Console pre-fills it; a **CLI deploy must pass it explicitly**. Use the version string Fundamental provides. |
 | `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
 | `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
 | `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |

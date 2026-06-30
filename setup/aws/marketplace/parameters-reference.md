@@ -1,6 +1,6 @@
 # Parameters Reference
 
-This is the complete reference for the CloudFormation parameters used to deploy the Fundamental Platform (v1.3.0), plus a ready‑to‑edit `params.json` for deploying from the AWS CLI. Most parameters have production‑ready defaults — a 0‑to‑1 deployment only requires the handful in the **Required** group below.
+This is the complete reference for the CloudFormation parameters used to deploy the Fundamental Platform (v2.0.0), plus a ready‑to‑edit `params.json` for deploying from the AWS CLI. Most parameters have production‑ready defaults — a 0‑to‑1 deployment only requires the handful in the **Required** group below.
 
 > The Console launch (via the Marketplace subscription) shows these same parameters as a form and pre‑fills version‑pinned values for you. Use this reference if you prefer the **CLI** (`params.json`) path, or to understand any parameter before changing it.
 

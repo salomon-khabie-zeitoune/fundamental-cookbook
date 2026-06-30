@@ -6,7 +6,7 @@ Deploy the Fundamental Platform into your AWS environment via AWS Marketplace an
 
 | Resource | Description |
 |----------|-------------|
-| [Deployment Guide](deployment-guide.md) | Step-by-step instructions for deploying and connecting to the platform (v1.2.0) |
+| [Deployment Guide](deployment-guide.md) | Step-by-step instructions for deploying and connecting to the platform (v2.0.0) |
 | [Parameters Reference](parameters-reference.md) | Every CloudFormation parameter (required + optional) with defaults, plus a ready-to-edit `params.json` for CLI deploys |
 | [Upgrade Guide](update-guide.md) | In-place updates: new bundle + chart versions, and infrastructure/template changes |
 | [Image Bundle Guide](image-bundle-guide.md) | Optional: load the image bundle into your own ECR yourself (to pre-scan images first). By default the platform loads it automatically. |
