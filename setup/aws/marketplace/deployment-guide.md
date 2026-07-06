@@ -30,7 +30,7 @@ The Fundamental platform provisions its own isolated VPC during deployment. You 
 - Two private subnets in two different Availability Zones (no public IP auto-assignment)
 - One route table per subnet, each with a route to a NAT gateway or equivalent egress path
 - `EnableDnsHostnames` and `EnableDnsSupport` both enabled on the VPC
-- Sufficient CIDR space. The stack's default sizing is a **/16 VPC with two /24 private subnets** (one per AZ); size each private subnet at **/24 or larger** so there is room for EKS pod IPs (assigned from the subnets by the VPC CNI), the internal load-balancer subnets, and the VPC endpoint ENIs
+- Sufficient CIDR space. The stack's default sizing is a **/16 VPC with two /24 private subnets** (one per AZ). Each private subnet must be **/24 at minimum** - a single /24 yields only ~500 usable IPs, which is the floor for all nodes and pods in a working deployment. Do **not** use /25 or /26 subnets; go larger than /24 if you expect to scale. These IPs are consumed by EKS pod IPs (assigned from the subnets by the VPC CNI), the internal load-balancer subnets, and the VPC endpoint ENIs
 
 | Parameter | Description |
 |-----------|-------------|
@@ -104,7 +104,7 @@ Ensure your AWS account has capacity for the following instance types in your de
 
 The platform also runs **one additional EKS node** for heavier workloads, on top of the two worker nodes. It is enabled by default; you can turn it off (`EnableEksHeavyNodeGroup=false`) if you do not need the extra capacity. Check with Fundamental before disabling it.
 
-> **GPU instance availability:** `p5en.48xlarge` is recommended for production but may have limited capacity in some regions. Use `ModelGpuInstanceType=g4dn.8xlarge` for testing or when `p5en` capacity is not available.
+> **GPU instance availability:** Use `p5en.48xlarge` (the production GPU instance). If `p5en.48xlarge` capacity is not available in your region, reach out to Fundamental rather than switching to a smaller GPU instance.
 
 #### Container Images
 
@@ -112,9 +112,7 @@ You do **not** host images, supply registry credentials, or run any manual image
 
 **How it works (automatic - this is the default):**
 
-- Fundamental publishes **two offline image bundles** - an **infra** bundle (CRDs, cluster infrastructure, the helm-deployer image, and all third-party dependencies) and an **app** bundle (the application and its images) - plus a small `crane` binary and a `manifest.json` per bundle, to an S3 bucket your account is granted read access to, each under its own `<version>/` prefix. The `FunInfraBundleVersion` and `FunAppBundleVersion` parameters select which release of each to deploy; the stack derives the bundle/crane/manifest keys from them and reads the chart and image versions from the two manifests.
-- A native **image-importer Lambda** - created by the stack and running inside the platform VPC - downloads **both** bundles, creates the ECR repositories in your account, and pushes every image: the Fundamental charts (CRDs, infrastructure, application), the helm-deployer image, and all third-party dependencies (Temporal, database operator, ingress, load-balancer controller, monitoring).
-- It runs **before** the rest of the platform, so by the time the Kubernetes workloads start, every image already exists in your ECR. The helm-deployer Lambda and the EKS nodes then pull from your own registry.
+At deploy time the stack brings all bundle artifacts - every container image and Helm chart the platform needs - into your account's own ECR before the platform starts, and the platform pulls from there. You choose which release to deploy with the `FunInfraBundleVersion` and `FunAppBundleVersion` parameters; Fundamental provides the version strings.
 
 Nothing leaves AWS: the bundle download and the image pushes stay inside AWS over VPC endpoints the stack provisions for you (S3 for the bundle, ECR API/Docker for the images). There is no cross-account image pull and no registry credential to manage.
 

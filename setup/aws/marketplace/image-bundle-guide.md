@@ -30,6 +30,16 @@ curl -fsSL -o crane.tar.gz \
 sudo tar -xzf crane.tar.gz -C /usr/local/bin crane
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+$VERSION = "v0.20.2"
+Invoke-WebRequest -Uri "https://github.com/google/go-containerregistry/releases/download/$VERSION/go-containerregistry_Windows_x86_64.tar.gz" -OutFile crane.tar.gz
+tar -xzf crane.tar.gz crane.exe
+```
+
+`tar` ships with Windows 10/11. Move `crane.exe` onto your `PATH` (or run it from the current directory). If you prefer a package manager, `scoop install crane` or `choco install crane` also work.
+
 Verify:
 
 ```bash

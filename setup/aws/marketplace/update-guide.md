@@ -20,9 +20,7 @@ Two cases are covered, both applied as a CloudFormation **stack update** on your
 | `FunInfraBundleVersion` | The infra release to move to. Re-imports the infra bundle and rolls the crd/infra chart + image versions it pins. |
 | `FunAppBundleVersion` | The app release to move to. Re-imports the app bundle and rolls the application chart + image versions it pins. |
 
-**How it works:** when you change either version, the image-importer step re-runs and loads that bundle into your ECR (the stack derives the bundle and crane S3 keys from the versions, under `s3://<bundle-bucket>/<version>/`); then the helm-deployer re-runs `helm upgrade --install` using the chart versions and helm-deployer image read from the bundles' `manifest.json`. No EC2 instances or EKS nodes are replaced.
-
-> **Simpler than before:** chart versions and the helm-deployer image are not separate parameters - they travel inside each bundle's `manifest.json`. You change **only** the bundle version(s), and a given pair always pins a self-consistent set. Fundamental hands you the new version strings for each release.
+**How it works:** when you change either version, the stack loads the new bundle into your account's ECR and upgrades the platform to it in place - no EC2 instances or EKS nodes are replaced. You change only the bundle version(s); each release is a self-consistent set, and Fundamental hands you the new version strings.
 
 ### Steps
 
