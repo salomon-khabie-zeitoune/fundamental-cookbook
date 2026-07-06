@@ -63,10 +63,13 @@ TAG_KEY="fundamental-model-test"
 # Read a CloudFormation export by name. list-exports paginates and the CLI
 # applies --query per page, so "| [0]" would emit a stray "None" from the
 # non-matching page. Query without [0] and strip blank/None lines instead.
+# Trailing `|| true`: when the export is missing, grep matches nothing and exits
+# non-zero, which under `set -euo pipefail` would abort the script before the
+# caller can report a helpful error. Return empty instead and let the caller check.
 get_export() {
   aws cloudformation list-exports --region "${REGION}" \
     --query "Exports[?Name=='$1'].Value" --output text 2>/dev/null \
-    | tr '\t' '\n' | grep -vE '^$|^None$' | head -n1
+    | tr '\t' '\n' | grep -vE '^$|^None$' | head -n1 || true
 }
 
 echo "=============================================="
