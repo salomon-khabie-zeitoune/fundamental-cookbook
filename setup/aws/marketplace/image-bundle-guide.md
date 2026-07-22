@@ -1,15 +1,15 @@
-# Image Bundle Guide (optional pre-scan / manual load)
+# Image Bundle Guide
 
-> **You usually do NOT need this guide.** By default the platform loads all images into your own ECR **automatically** at deploy time (the image-importer Lambda). Follow this guide only if you want to **scan every image yourself before it reaches your cluster**, or your security process otherwise requires loading the images manually. After loading them yourself, you deploy with `SkipImageImport=true` so the stack skips the automatic importer.
+> **Optional path:** By default, the platform loads all images into your own ECR at deploy time. Use this guide only when your security process requires scanning or loading images yourself before deployment. After loading the images, deploy with `SkipImageImport=true`.
 
-These are the same bundles the importer Lambda uses; the only difference is that *you* run the loader instead of the stack. A release ships two bundles (infra + app); load **both**.
+These are the same bundles the importer Lambda uses. A release ships two bundles, infra and app; load both.
 
 ## Prerequisites
 
 - AWS CLI installed and configured for your account
 - `crane` installed (see Step 1)
 - IAM permissions to create ECR repositories and push images (`ecr:CreateRepository`, `ecr:GetAuthorizationToken`, and the layer/put-image actions)
-- The offline bundle S3 links provided by Fundamental. A release ships **two** bundles - an **infra** bundle and an **app** bundle - each as its own tarball (a pre-signed URL or an `s3://` path per bundle)
+- The offline bundle S3 links provided by Fundamental. A release ships an **infra** bundle and an **app** bundle, each as its own tarball (a pre-signed URL or an `s3://` path per bundle)
 
 ## Step 1: Install crane
 
@@ -66,7 +66,7 @@ Each archive extracts to a `bundle/` directory (here `infra/bundle/` and `app/bu
 
 ## Step 3: (Optional) Scan the images
 
-This is the reason to use this path. Each image is a standard OCI layout under `<bundle>/images/<name>/`, so you can point your scanner at them locally before anything is pushed. Scan both bundles. For example, with Trivy:
+Each image is a standard OCI layout under `<bundle>/images/<name>/`, so you can scan it locally before anything is pushed. Scan both bundles. For example, with Trivy:
 
 ```bash
 for d in infra/bundle/images/*/ app/bundle/images/*/; do

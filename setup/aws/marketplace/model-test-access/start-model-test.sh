@@ -126,9 +126,8 @@ The jumpbox must run in a consumer VPC (a VPC whose execute-api endpoint is
 registered with the API Gateway), not in the Fundamental platform VPC.
 
 Fix one of:
-  - Register a consumer VPC: deploy consumer-vpc-endpoint.yaml in the consumer
-    VPC, then add its endpoint id to the stack's ConsumerVpcEndpoint<N>Id param
-    and update the deployment so the private API accepts it.
+  - Register a consumer VPC by updating the deployment with ConsumerVpc1Id /
+    ConsumerVpc1SubnetIds, or the next available ConsumerVpc<N>* parameter group.
   - Or set CONSUMER_VPCE_ID=<vpce-id> to target a specific registered endpoint.
 EOF
   exit 1

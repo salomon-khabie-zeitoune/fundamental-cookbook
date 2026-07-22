@@ -1,30 +1,30 @@
 # Parameters Reference
 
-This is the complete reference for the CloudFormation parameters used to deploy the Fundamental Platform (v2.0.0), plus a ready‑to‑edit `params.json` for deploying from the AWS CLI. Most parameters have production‑ready defaults — a 0‑to‑1 deployment only requires the handful in the **Required** group below.
+This is the complete CloudFormation parameter reference for Fundamental Platform v2.0.0, including a ready-to-edit `params.json` for AWS CLI deploys. Most parameters have production-ready defaults; a standard deployment only requires the values in the **Required** group below.
 
-> The Console launch (via the Marketplace subscription) shows these same parameters as a form and pre‑fills version‑pinned values for you. Use this reference if you prefer the **CLI** (`params.json`) path, or to understand any parameter before changing it.
+> The Marketplace Console launch shows the same parameters as a form and pre-fills version-pinned values. Use this reference for CLI deploys or before changing a non-default parameter.
 
 ---
 
-## Required parameters (no default — you must supply these)
+## Required Parameters
 
 | Parameter | What it is | How to get the value |
 |-----------|-----------|----------------------|
-| `AmiId` | The platform AMI used by all three EC2 compute tiers (API, ModelCPU, ModelGPU). | Fundamental shares this AMI with your account (launch permission), one per region. The Console Launch page pre‑fills it for the region you pick; for a CLI deploy, copy that value from the Launch page or ask Fundamental for the AMI ID in your region. |
-| `CloudFormationExecutionRoleArn` | The IAM role CloudFormation runs as. The stack also grants this role **EKS cluster‑admin** so it can bootstrap the cluster's access entries. | The `FundamentalPlatform-CFServiceRole` ARN from `create-role.sh` — pass the **same** ARN as `--role-arn` (Console: the **Permissions** field). |
+| `AmiId` | Platform AMI for the EC2 compute tiers. | Fundamental shares this AMI with your account, one per region. The Console Launch page pre-fills it; for CLI deploys, copy it from that page or ask Fundamental for the AMI ID in your region. |
+| `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as. The stack grants this role EKS cluster-admin to bootstrap cluster access entries. | The `FundamentalPlatform-CFServiceRole` ARN from `create-role.sh`. Pass the same ARN as `--role-arn` (Console: **Permissions**). |
 | `ConsumerVpc1Id` | The VPC where your client applications run and call the private API from. **At least one Consumer VPC is required.** | An existing VPC in your account, or create a minimal one (see the Deployment Guide → Networking). |
-| `ConsumerVpc1SubnetIds` | Comma‑separated subnet IDs in that VPC that receive the API endpoint. | Subnets in `ConsumerVpc1Id`. No internet egress required. |
+| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC that receive the API endpoint. | Subnets in `ConsumerVpc1Id`. No internet egress required. |
 
-> **`CloudFormationExecutionRoleArn` vs `EksAdminRoleArn`:** keep them **different** roles. `CloudFormationExecutionRoleArn` is the deploy role (gets cluster‑admin automatically as the cluster creator). `EksAdminRoleArn` is an *optional, separate* human/SSO role for `kubectl`. Setting both to the same ARN makes the stack try to create a duplicate EKS access entry and fail.
+> **`CloudFormationExecutionRoleArn` vs `EksAdminRoleArn`:** keep them as different roles. `CloudFormationExecutionRoleArn` is the deploy role. `EksAdminRoleArn` is an optional human or SSO role for `kubectl`. Reusing the same ARN makes the stack try to create a duplicate EKS access entry and fail.
 
 ---
 
-## Strongly recommended
+## Strongly Recommended
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
-| `DeploymentName` | `fundamental` | Prefixes resource and S3 bucket names. **Max 19 characters**: it is embedded in S3 bucket names like `<name>-nexus-trained-models-<region>-<account>`, which must stay within the 63‑char S3 limit. |
-| `EksAdminRoleArn` | *(empty)* | Optional IAM role granted `kubectl` cluster‑admin via an EKS access entry. Leave empty if you don't need direct cluster access (not required to use the platform). Access is private‑endpoint only — must originate inside the platform VPC. |
+| `DeploymentName` | `fundamental` | Prefixes resource and S3 bucket names. **Max 19 characters** because it is embedded in bucket names like `<name>-nexus-trained-models-<region>-<account>`. |
+| `EksAdminRoleArn` | *(empty)* | Optional IAM role granted `kubectl` cluster-admin through an EKS access entry. Leave empty if you do not need direct cluster access. Access must originate inside the platform VPC. |
 
 ---
 
@@ -33,18 +33,18 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
 | `ExistingVpcId` | *(empty)* | Leave empty to let the stack create the platform VPC. Set to deploy into a VPC you control (then the six `ExistingPrivate*` params below are required). |
-| `ExistingPrivateSubnet1Id` / `…2Id` | *(empty)* | Two private subnets in two AZs (required if `ExistingVpcId` is set). |
-| `ExistingPrivateRouteTable1Id` / `…2Id` | *(empty)* | One route table per subnet. |
-| `ExistingPrivateSubnet1Az` / `…2Az` | *(empty)* | AZ names, e.g. `us-west-1a`, `us-west-1b`. |
+| `ExistingPrivateSubnet1Id` / `ExistingPrivateSubnet2Id` | *(empty)* | Two private subnets in two AZs. Required when `ExistingVpcId` is set. |
+| `ExistingPrivateRouteTable1Id` / `ExistingPrivateRouteTable2Id` | *(empty)* | One route table per subnet. |
+| `ExistingPrivateSubnet1Az` / `ExistingPrivateSubnet2Az` | *(empty)* | AZ names, e.g. `us-west-1a`, `us-west-1b`. |
 | `VpcCidr` | `10.0.0.0/16` | Platform VPC CIDR (must match when bringing an existing VPC). |
-| `PrivateSubnet1Cidr` / `…2Cidr` | `10.0.11.0/24` / `10.0.12.0/24` | Used only when creating a new VPC. |
-| `ConsumerVpc2Id`…`ConsumerVpc5Id` (+ `*SubnetIds`) | *(empty)* | Up to four additional consumer VPCs. |
+| `PrivateSubnet1Cidr` / `PrivateSubnet2Cidr` | `10.0.11.0/24` / `10.0.12.0/24` | Used only when creating a new VPC. |
+| `ConsumerVpc2Id` through `ConsumerVpc5Id` plus subnet IDs | *(empty)* | Up to four additional consumer VPCs. |
 | `CreateVpcEndpoints` | `true` | Master toggle for all VPC endpoints. Set `false` only if you have already provisioned them in your VPC. |
 | `CreateEndpoint*` (S3, Kms, ExecuteApi, Monitoring, Logs, Ssm, SsmMessages, Ec2Messages, SecretsManager, Sts, MeteringMarketplace) | `true` | Per‑service endpoint toggles. Leave on unless an endpoint already exists. |
 
 ---
 
-## Compute tiers (EC2)
+## Compute Tiers (EC2)
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
@@ -52,7 +52,7 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | `ApiDesiredCapacity` | `1` | API instance count. |
 | `ModelCpuInstanceType` | `c7i.48xlarge` | CPU model tier. |
 | `ModelCpuDesiredCapacity` | `1` | |
-| `ModelGpuInstanceType` | `p5en.48xlarge` | GPU inference tier. `p5en.48xlarge` is recommended for production; use `g4dn.8xlarge` or similar if `p5en` capacity is unavailable in your region. |
+| `ModelGpuInstanceType` | `p5en.48xlarge` | GPU inference tier. `p5en.48xlarge` is the production instance type; contact Fundamental if capacity is unavailable in your region. |
 | `ModelGpuDesiredCapacity` | `1` | |
 | `ModelOrchestrationInstanceType` | `m7i.8xlarge` | Temporal workflow worker (confidential compute). Allowed: `m7i.4xlarge`, `m7i.8xlarge`, `m7i.12xlarge`, `m5.8xlarge`. |
 | `ModelOrchestrationDesiredCapacity` | `1` | Set `0` to disable the Temporal worker tier entirely. |
@@ -60,9 +60,9 @@ This is the complete reference for the CloudFormation parameters used to deploy 
 | `CapacityReservationId` | *(empty)* | GPU Capacity Block reservation (e.g. `cr-1234567890abcdef0`). |
 | `ApiS3Path` / `ModelCpuS3Path` / `ModelGpuS3Path` / `ModelOrchestrationS3Path` | version‑pinned | Override the artifact version per tier. Leave at the pinned default. Only set when Fundamental gives you a specific version string. |
 
-### Optional: Split train/predict tiers
+### Optional: Split Train/Predict Tiers
 
-For advanced deployments only — leave all at `false` for a standard deployment.
+For advanced deployments only. Leave all of these at `false` for a standard deployment.
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
@@ -92,19 +92,19 @@ For advanced deployments only — leave all at `false` for a standard deployment
 
 ---
 
-## Images & version
+## Images and Version
 
-Two parameters, `FunInfraBundleVersion` and `FunAppBundleVersion`, select the released version of everything - the infra and app bundles respectively. The Console Launch page pre‑fills them for the version you pick; for a CLI deploy you set them to the released version strings Fundamental gives you.
+`FunInfraBundleVersion` and `FunAppBundleVersion` select the released infra and app bundles. The Console Launch page pre-fills them for the version you pick; for CLI deploys, use the version strings Fundamental gives you.
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
 | `FunInfraBundleVersion` | version‑pinned | Selects the **infra** bundle (CRDs, infrastructure, the helm‑deployer image, and all third‑party images). The stack derives its bundle/crane/manifest S3 keys from it (`<v>/fundamental-infra-<v>.tar.gz`, `<v>/crane-linux-arm64`, `<v>/manifest.json`) and reads the crd/infra chart versions + helm‑deployer image details from that manifest. Change it on an infra upgrade (see the [Upgrade Guide](./update-guide.md)). |
 | `FunAppBundleVersion` | version‑pinned | Selects the **app** bundle (fundamental-application + app images). The stack derives its bundle/manifest S3 keys from it (`<v>/fundamental-app-<v>.tar.gz`, `<v>/manifest.json`) and reads the application chart version from that manifest. Change it on an app upgrade. |
 | `BundleS3Bucket` | *(shared bundle bucket)* | S3 bucket holding the offline bundle, crane binary, and `manifest.json`. Defaults to the shared bundle bucket Fundamental grants your account read access to; override only if Fundamental tells you to. |
-| `ImageRegistryUri` | *(empty)* | Empty = the importer loads images into **your own** ECR (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`) and the platform pulls from there. |
-| `SkipImageImport` | `false` | `false` = automatic import (default). `true` only if you loaded the bundle into your ECR yourself first (pre‑scan path — see the Image Bundle Guide). |
+| `ImageRegistryUri` | *(empty)* | Empty means the importer loads images into **your own** ECR (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`) and the platform pulls from there. |
+| `SkipImageImport` | `false` | Leave `false` for automatic import. Set `true` only if you loaded the bundle into your ECR yourself first; see the Image Bundle Guide. |
 
-> The chart versions and helm‑deployer image are no longer separate parameters. They live in each bundle's `manifest.json`, so a given pair of bundle versions always pins a self‑consistent set. The Kubernetes control‑plane version is also fixed internally (currently **1.36**) and is not a customer‑settable parameter.
+> Chart versions and the helm-deployer image are not separate parameters. They live in each bundle's `manifest.json`, so a given pair of bundle versions pins a self-consistent set. The Kubernetes control-plane version is fixed internally (currently **1.36**) and is not customer-settable.
 
 ---
 
@@ -121,9 +121,9 @@ Two parameters, `FunInfraBundleVersion` and `FunAppBundleVersion`, select the re
 
 ## `params.json` template (CLI deploy)
 
-Fill the six **required** values (`FunInfraBundleVersion`, `FunAppBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, `ConsumerVpc1SubnetIds`). Everything else uses the template default. `DeploymentName` defaults to `fundamental`; `EksAdminRoleArn` is optional but strongly recommended so you can run `kubectl` from inside the VPC if needed.
+Fill the six required values: `FunInfraBundleVersion`, `FunAppBundleVersion`, `AmiId`, `CloudFormationExecutionRoleArn`, `ConsumerVpc1Id`, and `ConsumerVpc1SubnetIds`. Everything else uses the template default. `DeploymentName` defaults to `fundamental`; `EksAdminRoleArn` is optional.
 
-Override `ModelGpuInstanceType` when `p5en.48xlarge` capacity is not available in your region (e.g. use `g4dn.8xlarge` for testing).
+Do not change `ModelGpuInstanceType` as a capacity workaround without checking with Fundamental.
 
 ```json
 [
@@ -134,16 +134,15 @@ Override `ModelGpuInstanceType` when `p5en.48xlarge` capacity is not available i
   { "ParameterKey": "CloudFormationExecutionRoleArn", "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole" },
   { "ParameterKey": "ConsumerVpc1Id",                 "ParameterValue": "vpc-REPLACE_ME" },
   { "ParameterKey": "ConsumerVpc1SubnetIds",          "ParameterValue": "subnet-REPLACE_ME,subnet-REPLACE_ME_2" },
-  { "ParameterKey": "ModelGpuInstanceType",           "ParameterValue": "g4dn.8xlarge" },
   { "ParameterKey": "EksAdminRoleArn",                "ParameterValue": "arn:aws:iam::<ACCOUNT_ID>:role/<your-kubectl-role>" }
 ]
 ```
 
-> `FunInfraBundleVersion` and `FunAppBundleVersion` are **required with no default** — set both on every deploy using the version strings Fundamental provides. On an upgrade, bump whichever bundle changed. To customize EKS or enable split tiers, add those rows from the tables above.
+> `FunInfraBundleVersion` and `FunAppBundleVersion` are required with no default. Set both on every deploy using the version strings Fundamental provides. On an upgrade, bump whichever bundle changed. To customize EKS or enable split tiers, add the relevant rows from the tables above.
 
 ### Deploy command
 
-Get the **template URL** from the Marketplace **Launch CloudFormation** page (it shows the S3 template URL), then:
+Get the **template URL** from the Marketplace **Launch CloudFormation** page, then:
 
 ```bash
 aws cloudformation create-stack \
@@ -155,7 +154,7 @@ aws cloudformation create-stack \
   --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole
 ```
 
-Pass the `FundamentalPlatform-CFServiceRole` ARN as `--role-arn` and set `CloudFormationExecutionRoleArn` (in `params.json`) to the **same** ARN. Deploying with the service role (rather than as a plain admin) is what keeps the EKS access‑entry bootstrap reliable.
+Pass the `FundamentalPlatform-CFServiceRole` ARN as `--role-arn` and set `CloudFormationExecutionRoleArn` in `params.json` to the same ARN.
 
 Track progress with:
 
@@ -164,4 +163,4 @@ aws cloudformation describe-stack-events --stack-name fundamental --region "$DEP
   --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[LogicalResourceId,ResourceStatusReason]' --output table
 ```
 
-The deployment takes roughly **45 minutes** (EKS + the image import + the Helm install run sequentially). See the [Deployment Guide](./deployment-guide.md) for verification and connecting your application.
+The deployment takes roughly **45 minutes** because EKS, image import, and Helm install run sequentially. See the [Deployment Guide](./deployment-guide.md) for verification and application setup.
