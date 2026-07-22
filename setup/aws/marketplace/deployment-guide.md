@@ -8,20 +8,52 @@
 
 - AWS Account with appropriate permissions
 - AWS CLI installed and configured
-- Active subscription to the **Fundamental Platform** on [AWS Marketplace](https://aws.amazon.com/marketplace). Navigate to the product listing, click **Continue to Subscribe**, and accept the terms. Once the subscription is active, you can proceed with deployment.
+- Active subscription to the **Fundamental Platform** on [AWS Marketplace](https://aws.amazon.com/marketplace). In the product listing, choose **Continue to Subscribe** and accept the terms before deploying.
+- **AutoScaling service-linked role** present in the account. The platform's KMS key grants this role access so EC2 Auto Scaling can encrypt compute-tier EBS volumes. AWS usually creates the role on first Auto Scaling use; in a brand-new account, create it once up front:
 
-#### Networking
+  ```bash
+  aws iam create-service-linked-role --aws-service-name autoscaling.amazonaws.com
+  ```
 
-The Fundamental platform deploys into its own isolated VPC, but requires a "Consumer" VPC where your client applications will reside.
+  If the role already exists, AWS returns `InvalidInput: Service role name ... has been taken`; you can ignore that. Other service-linked roles, including EKS and Elastic Load Balancing, are created by the stack when needed.
 
-You must have:
+#### Consumer VPC
 
-- **Consumer VPC ID**: An existing VPC where your client applications will run
-- **Consumer Subnet IDs**: Subnets within that VPC with outbound internet access (to download packages) and connectivity to the Fundamental endpoint
+The platform API is private. To call it, provide at least one consumer VPC: the VPC where your client applications run, or where you plan to run a test client. The stack creates an API Gateway VPC endpoint in the subnets you provide.
 
-> **Note:** Ensure you have the full VPC ID (e.g., `vpc-0abc123def456789a`) and Subnet ID (e.g., `subnet-0abc123def456789a`).
+You must supply:
 
-#### Compute Capacity
+- **`ConsumerVpc1Id`**: VPC ID for your client application network (for example, `vpc-0abc123def456789a`).
+- **`ConsumerVpc1SubnetIds`**: Comma-separated subnet IDs in that VPC (for example, `subnet-111,subnet-222`). These subnets receive the private API endpoint and do not need internet egress.
+
+> **Note:** The consumer subnet does not require a NAT gateway or internet gateway. API traffic stays on the AWS network through the VPC endpoint.
+
+### Networking
+
+#### Platform VPC (created automatically by the stack)
+
+We recommend letting the stack create the platform networking. By default, it creates a dedicated platform VPC with two private subnets across two Availability Zones, route tables, and the required VPC endpoints.
+
+**Bringing an existing VPC (optional):** Set `ExistingVpcId` only when you want the platform resources placed in an existing VPC. You must also supply the six accompanying parameters listed below. The VPC must have:
+
+- Two private subnets in two different Availability Zones (no public IP auto-assignment)
+- One route table per subnet, each with a route to a NAT gateway or equivalent egress path
+- `EnableDnsHostnames` and `EnableDnsSupport` both enabled on the VPC
+- Sufficient CIDR space. The stack's default sizing is a **/16 VPC with two /24 private subnets** (one per AZ). Each private subnet must be **/24 at minimum**; do **not** use /25 or /26 subnets. These IPs are consumed by EKS pod IPs (assigned from the subnets by the VPC CNI), internal load balancers, and VPC endpoint ENIs. Use larger subnets if you expect to scale.
+
+| Parameter | Description |
+|-----------|-------------|
+| `ExistingVpcId` | ID of the existing VPC (e.g., `vpc-0abc123def456789a`) |
+| `ExistingPrivateSubnet1Id` | Private subnet in AZ 1 (e.g., `subnet-0abc123def456789a`) |
+| `ExistingPrivateSubnet2Id` | Private subnet in AZ 2 (e.g., `subnet-0def456abc789012b`) |
+| `ExistingPrivateRouteTable1Id` | Route table associated with subnet 1 |
+| `ExistingPrivateRouteTable2Id` | Route table associated with subnet 2 |
+| `ExistingPrivateSubnet1Az` | AZ name for subnet 1 (e.g., `<REGION>a`) |
+| `ExistingPrivateSubnet2Az` | AZ name for subnet 2 (e.g., `<REGION>b`) |
+
+For a new account or standard deployment, skip this block and let the stack create the platform VPC.
+
+### Compute Capacity
 
 Ensure your AWS account has capacity for the following instance types in your deployment region:
 
@@ -30,34 +62,52 @@ Ensure your AWS account has capacity for the following instance types in your de
 | **API** | `m7i.4xlarge` | `m7i.2xlarge` |
 | **Model CPU** | `c7i.48xlarge` | `c7i.24xlarge` |
 | **Model GPU** | `p5en.48xlarge` | `p5e.48xlarge` |
+| **ModelOrchestration** | `m7i.8xlarge` (1 instance) | `m7i.4xlarge`, `m7i.12xlarge` |
+| **EKS worker nodes** | `m7i.4xlarge` × 2 (one per AZ) | — |
+| **EKS additional node** | `m7i.4xlarge` × 1 | `m7i.8xlarge`, `r7i.2xlarge`, `r7i.4xlarge` |
+
+### Container Images
+
+You do **not** host images, supply registry credentials, or run any manual image step. The stack loads the required container images and Helm charts into **your own account's Amazon ECR** before workloads start, so the deployment is self-contained in your account.
+
+**How it works (automatic - this is the default):**
+
+- Fundamental publishes separate **infra** and **app** bundles, each with a `manifest.json`, to an S3 bucket your account can read. `FunInfraBundleVersion` and `FunAppBundleVersion` select the release; the stack derives the bundle, manifest, and `crane` keys from those values.
+- The stack's image-importer Lambda runs inside the platform VPC before the Kubernetes workloads, creates the needed ECR repositories in your account, and pushes the bundle contents there. The helm-deployer Lambda and EKS nodes then pull from your own registry.
+
+Nothing leaves AWS: the bundle download and the image pushes stay inside AWS over VPC endpoints the stack provisions for you (S3 for the bundle, ECR API/Docker for the images). There is no cross-account image pull and no registry credential to manage.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `FunInfraBundleVersion` | Selects the **infra** bundle release (CRDs + infrastructure + helm-deployer + third-party images). The stack derives the infra bundle/crane/manifest S3 keys from it. Pre-filled for this version; change it on an infra upgrade. | *(version-pinned)* |
+| `FunAppBundleVersion` | Selects the **app** bundle release (application + app images). The stack derives the app bundle/manifest S3 keys from it. Pre-filled for this version; change it on an app upgrade. | *(version-pinned)* |
+| `BundleS3Bucket` | S3 bucket holding the bundle, crane binary, and `manifest.json`. Defaults to the shared bundle bucket your account is granted read access to. | *(shared bundle bucket)* |
+| `ImageRegistryUri` | ECR prefix the platform pulls from. Leave empty to use your own account's registry (`<account>.dkr.ecr.<region>.amazonaws.com/fundamental`), which the importer populates. | *(empty)* |
+| `SkipImageImport` | Leave `false` for the automatic import. Set `true` only if you have loaded the bundle into your ECR yourself (see the optional pre-scan path below). | `false` |
+
+**Optional - pre-scan the images first.** If your security process requires scanning every image before it reaches your cluster, ask Fundamental for the bundle, load it into your ECR yourself with the included loader, then deploy with `SkipImageImport=true`. The stack then skips the importer and uses the images you already loaded. See the [Image Bundle Guide](./image-bundle-guide.md).
+
+> **Note:** Service-role customers updating from a pre-EKS version must refresh the deploy role before upgrading to v2.0.0 or later. See the [Upgrade Guide](./update-guide.md).
 
 ### Set Environment Variables
 
 ```bash
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export DEPLOYMENT_REGION=us-west-1
-export FUNDAMENTAL_VERSION=0.1.0
+export FUNDAMENTAL_VERSION=2.0.0
 ```
 
 > **Supported Regions:** `us-west-1`, `us-east-1`
 
-### 1. Permissions
+### 1. Permissions — Create the CloudFormation Service Role
 
-You have two options for permissions:
-
-#### Option A: Deploy as Admin
-
-If you have access to your AWS account's root user or an IAM user with `AdministratorAccess`, you can deploy directly without additional setup.
-
-#### Option B: Use CloudFormation Service Role
-
-We provide a pre-configured CloudFormation Service Role that allows deployment without needing direct permissions on all underlying AWS resources.
+Deploy with the provided **CloudFormation Service Role**. CloudFormation assumes this role to create the platform, and the stack grants it EKS cluster-admin so it can bootstrap cluster access entries. This is the supported deployment path.
 
 **How it works:**
 
-- You create an IAM role that CloudFormation assumes during deployment
-- Users only need permission to run CloudFormation and pass the role
-- The role has the permissions required to create the platform resources
+- Create the IAM role once.
+- Give deployers permission to run CloudFormation and pass that role.
+- Pass the same role ARN as the stack's `CloudFormationExecutionRoleArn` parameter and as the deploy command's `--role-arn` (Console: **Permissions**).
 
 **To create the service role:**
 
@@ -84,6 +134,7 @@ cd setup/aws/marketplace/cloudformation-deploy-role
 **What the script creates:**
 
 - IAM Role: `FundamentalPlatform-CFServiceRole`
+- Customer-managed policies named `FundamentalPlatform-CFServiceRole-*`, attached to the role.
 
 **User permissions required:**
 
@@ -116,35 +167,58 @@ Users running the deployment need this minimal policy to use the service role:
 
 ### 2. Required Information
 
-Before deploying, collect the following:
+Collect these values before launching the stack:
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `ConsumerVpc1Id` | VPC ID where your applications will call the API | vpc-0abc123def456 |
-| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | subnet-111,subnet-222 |
+| Parameter | Description | Example | Notes |
+|-----------|-------------|---------|-------|
+| `FunInfraBundleVersion` | The **infra** bundle version to deploy. | `2.0.0` | Required. The Console pre-fills it; CLI deploys must pass it explicitly. Use the value Fundamental provides. |
+| `FunAppBundleVersion` | The **app** bundle version to deploy. | `1.7.0` | Required. The Console pre-fills it; CLI deploys must pass it explicitly. Use the value Fundamental provides. |
+| `AmiId` | Platform AMI for the three EC2 compute tiers | `ami-0abc123def456789a` | Shared with your account by Fundamental (one per region). The Console Launch page pre-fills it; for a CLI deploy, copy it from that page or ask Fundamental. |
+| `CloudFormationExecutionRoleArn` | IAM role CloudFormation runs as (also granted EKS cluster-admin to bootstrap access entries) | `arn:aws:iam::123456789012:role/FundamentalPlatform-CFServiceRole` | The service-role ARN from `create-role.sh` (pass the same ARN as `--role-arn`). Keep it **different** from `EksAdminRoleArn`. |
+| `ConsumerVpc1Id` | VPC where your applications call the API | `vpc-0abc123def456` | At least one Consumer VPC is required - see [Networking](#networking). |
+| `ConsumerVpc1SubnetIds` | Comma-separated subnet IDs in that VPC | `subnet-111,subnet-222` | |
+| `DeploymentName` | Name prefix for resources/buckets (default `fundamental`) | `fundamental` | **Max 19 characters** (it is embedded in S3 bucket names bound by the 63-char limit). |
+
+For every parameter and a ready-to-edit `params.json`, see the [Parameters Reference](./parameters-reference.md).
 
 ### 3. Stack Configuration (Optional)
 
-The platform deploys with sensible defaults, but you can customize the configuration based on your workload requirements.
+The defaults are suitable for a standard deployment. Change these only when you need different capacity, versions, or access settings.
 
 #### Compute Tiers
 
-The platform consists of three compute tiers:
+The platform consists of four EC2 compute tiers:
 
 | Tier | Purpose | Default Instance | Default Count |
 |------|---------|-----------------|---------------|
 | **API** | Handles incoming API requests | `m7i.4xlarge` | 1 |
 | **ModelCPU** | Runs CPU-based model processing and orchestration | `c7i.48xlarge` | 1 |
 | **ModelGPU** | Runs GPU-accelerated inference workloads | `p5en.48xlarge` | 1 |
+| **ModelOrchestration** | Temporal workflow worker (confidential compute) | `m7i.8xlarge` | 1 |
 
-| Parameter | Description |
-|-----------|-------------|
-| `ApiInstanceType` | Instance type for API tier |
-| `ApiDesiredCapacity` | Number of API instances |
-| `ModelCpuInstanceType` | Instance type for CPU model tier |
-| `ModelCpuDesiredCapacity` | Number of CPU model instances |
-| `ModelGpuInstanceType` | Instance type for GPU tier |
-| `ModelGpuDesiredCapacity` | Number of GPU instances |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ApiInstanceType` | Instance type for API tier | `m7i.4xlarge` |
+| `ApiDesiredCapacity` | Number of API instances | `1` |
+| `ModelCpuInstanceType` | Instance type for CPU model tier | `c7i.48xlarge` |
+| `ModelCpuDesiredCapacity` | Number of CPU model instances | `1` |
+| `ModelGpuInstanceType` | Instance type for GPU tier | `p5en.48xlarge` |
+| `ModelGpuDesiredCapacity` | Number of GPU instances | `1` |
+| `ModelOrchestrationInstanceType` | Instance type for the Temporal worker tier | `m7i.8xlarge` |
+| `ModelOrchestrationDesiredCapacity` | Number of Temporal worker instances. Set `0` to disable this tier. | `1` |
+
+#### Optional: Split Train/Predict Tiers
+
+CPU and GPU workloads can be split into separate **train** and **predict** fleets with independent instance types and sizes. When a split tier is enabled, it replaces the corresponding legacy tier for that workload type. Leave these at `false` for a standard deployment.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `EnableModelCpuTrain` / `EnableModelCpuPredict` | Deploy a dedicated ModelCPU train or predict fleet | `false` |
+| `ModelCpuTrainInstanceType` / `ModelCpuPredictInstanceType` | Instance types for each fleet | `c7i.48xlarge` |
+| `ModelCpuTrainDesiredCapacity` / `ModelCpuPredictDesiredCapacity` | Fleet sizes | `1` |
+| `EnableModelGpuTrain` / `EnableModelGpuPredict` | Deploy a dedicated ModelGPU train or predict fleet | `false` |
+| `ModelGpuTrainInstanceType` / `ModelGpuPredictInstanceType` | Instance types for each GPU fleet | `p5en.48xlarge` |
+| `ModelGpuTrainDesiredCapacity` / `ModelGpuPredictDesiredCapacity` | Fleet sizes | `1` |
 
 #### Capacity Blocks
 
@@ -157,9 +231,13 @@ For guaranteed GPU capacity, you can use [EC2 Capacity Blocks](https://docs.aws.
 
 > **Note:** When using Capacity Blocks, the GPU instances will only launch in the specified Availability Zone. Ensure your Capacity Block is active and has sufficient capacity for your `ModelGpuDesiredCapacity`.
 
+#### EKS Platform
+
+The stack creates a private EKS cluster for Kubernetes application workloads. Most deployments do not need to change the EKS settings. See the [Parameters Reference](./parameters-reference.md#eks) for the full EKS parameter list, including optional `kubectl` access through `EksAdminRoleArn`.
+
 ### 4. Deploy the Platform
 
-The Fundamental Platform is deployed through your AWS Marketplace subscription.
+Deploy the platform from your AWS Marketplace subscription.
 
 1. Go to **AWS Marketplace** → **Manage subscriptions** → select **Fundamental Platform**
 2. Click **Launch CloudFormation stack**
@@ -167,19 +245,37 @@ The Fundamental Platform is deployed through your AWS Marketplace subscription.
 4. Under **Launch action**, choose **Launch CloudFormation**
 5. Click **Launch**
 
-This opens the CloudFormation console with the template pre-filled. From here:
+This opens the CloudFormation console with the template pre-filled:
 
-6. Fill in the parameters from Step 2 (VPC, Subnets, etc.)
+6. Fill in the parameters from Step 2
 7. Customize compute tiers and capacity blocks as needed (see Step 3)
-8. If using the service role (Option B), under **Permissions**, select the `FundamentalPlatform-CFServiceRole`
+8. Under **Permissions**, select the `FundamentalPlatform-CFServiceRole` (created in Step 1)
 9. Check the box acknowledging IAM resource creation
 10. Click **Create stack**
+
+#### Alternative: Deploy via the AWS CLI (`params.json`)
+
+For automation or repeatable deploys, use a `params.json` file instead of the Console form. Copy the **template URL** from the Marketplace **Launch CloudFormation** page, fill in the required values, and run `create-stack`:
+
+```bash
+aws cloudformation create-stack \
+  --stack-name fundamental \
+  --region "$DEPLOYMENT_REGION" \
+  --template-url "<MARKETPLACE_TEMPLATE_URL>" \
+  --parameters file://params.json \
+  --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/FundamentalPlatform-CFServiceRole
+```
+
+Set `CloudFormationExecutionRoleArn` in `params.json` to the same service-role ARN you pass as `--role-arn`. A minimal `params.json` and the full parameter list are in the [Parameters Reference](./parameters-reference.md).
+
+> **Deployment time:** the stack takes roughly **45 minutes** to reach `CREATE_COMPLETE`. The private EKS cluster, image import, and Helm install run sequentially.
 
 ### 5. Verify Deployment
 
 #### A. Verify Root Stack
 
-Ensure the root stack reports `CREATE_COMPLETE`.
+The root stack should report `CREATE_COMPLETE`.
 
 **Using AWS Console:**
 
@@ -187,7 +283,7 @@ Go to **CloudFormation** → **Stacks** → select your stack → verify the sta
 
 **Using AWS CLI:**
 
-> **Note:** Replace `<your-stack-name>` with your actual stack name (e.g., `fundamental`).
+Replace `<your-stack-name>` with your stack name, for example `fundamental`.
 
 ```bash
 aws cloudformation describe-stacks \
@@ -199,7 +295,7 @@ aws cloudformation describe-stacks \
 
 #### B. Verify Nested Stacks
 
-Fundamental uses nested stacks. Ensure all substacks are healthy.
+Fundamental uses nested stacks. Confirm the nested stacks are healthy.
 
 **Using AWS Console:**
 
@@ -207,7 +303,7 @@ Go to **CloudFormation** → **Stacks** → select your stack → **Resources** 
 
 **Using AWS CLI:**
 
-> **Note:** Replace `<your-stack-name>` with your actual stack name (e.g., `fundamental`).
+Replace `<your-stack-name>` with your stack name, for example `fundamental`.
 
 ```bash
 aws cloudformation describe-stack-resources \
@@ -219,15 +315,15 @@ aws cloudformation describe-stack-resources \
 
 #### C. Verify EC2 Instances
 
-You should see 3 instances running: `api`, `modelcpu`, and `modelgpu`.
+You should see the EC2 compute tiers running: `api`, `modelcpu`, `modelgpu`, and `modelorchestration` unless you disabled that tier. The private EKS worker nodes also appear as EC2 instances.
 
 **Using AWS Console:**
 
-Go to **EC2** → **Instances** → filter by tag `DeploymentName` = your stack name. Verify 3 instances are in the **Running** state.
+Go to **EC2** -> **Instances** -> filter by tag `DeploymentName` = your stack name. Verify the expected compute-tier and EKS instances are **Running**.
 
 **Using AWS CLI:**
 
-> **Note:** Replace `<your-stack-name>` with your actual stack name.
+Replace `<your-stack-name>` with your stack name.
 
 ```bash
 aws ec2 describe-instances \
@@ -241,11 +337,11 @@ aws ec2 describe-instances \
 
 **Using AWS Console:**
 
-Go to **CloudFormation** → **Stacks** → select your stack → **Outputs** tab. Note the values listed — you will need these to connect your application.
+Go to **CloudFormation** -> **Stacks** -> select your stack -> **Outputs**. Keep these values for application setup.
 
 **Using AWS CLI:**
 
-> **Note:** Replace `<your-stack-name>` with your actual stack name.
+Replace `<your-stack-name>` with your stack name.
 
 ```bash
 aws cloudformation describe-stacks \
@@ -259,11 +355,11 @@ aws cloudformation describe-stacks \
 
 ## Part 2: Connect Your Application
 
-To call the Fundamental API from your applications, you need to grant your application IAM permissions to invoke the API.
+To call the Fundamental API, grant your application IAM permission to invoke it.
 
 ### Stack Outputs Reference
 
-The deployment provides these outputs for connecting your applications:
+The stack provides these outputs for application access:
 
 | Output | Use Case |
 |--------|----------|
@@ -274,7 +370,7 @@ The deployment provides these outputs for connecting your applications:
 
 ### Grant API Access
 
-Choose the option that fits your use case:
+Choose the option that matches where your application runs:
 
 | Option | When to Use | What to Do |
 |--------|-------------|------------|
@@ -282,7 +378,7 @@ Choose the option that fits your use case:
 | **B. Use Provided Role** | You don't have an existing role (Lambda, ECS, etc.) | Use `ApiGatewayExecuteRoleArn` directly |
 | **C. Use Instance Profile** | EC2 instances | Attach `ApiGatewayExecuteInstanceProfileArn` when launching |
 
-For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-ec2).
+For a quick test, see [Appendix: Quick Test](#appendix-quick-test).
  
 ---
 
@@ -290,8 +386,8 @@ For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-
 
 ### Stack creation fails with "Access Denied"
 
-- Ensure you're using an admin user or the CloudFormation service role
-- If using the service role, verify it was created successfully with `./create-role.sh`
+- Verify the `FundamentalPlatform-CFServiceRole` was created successfully with `./create-role.sh`, and that you selected it under **Permissions** (Console) or passed it as `--role-arn` (CLI)
+- Confirm `CloudFormationExecutionRoleArn` is set to that same role ARN
 
 ### Stack creation fails with IAM errors
 
@@ -305,144 +401,158 @@ For a quick test, see [Appendix: Quick Test with EC2](#appendix-quick-test-with-
 
 ---
 
-## Appendix: Quick Test with EC2
+## Appendix: Quick Test
 
-This section shows how to create a test EC2 instance and verify the deployment works.
+There are two ways to verify the deployment end to end. The helper script is the fastest; the manual CLI steps are included for teams that prefer to run each command themselves.
 
-### 1. Get Stack Outputs
+Both paths require your **Cloudsmith token** to install the SDK. The SDK is not on public PyPI; Fundamental provides a token for your organization.
+
+### Option A: Helper script (recommended)
+
+The scripts in [`model-test-access/`](./model-test-access/) launch a small jumpbox in your consumer VPC, install the SDK, and open a shell for a smoke test against the private API. See the directory README for connection options and cleanup details.
+
+**Prerequisites**
+
+- An SSH client, or the AWS CLI **Session Manager plugin** for the default SSM connection mode. The script supports both; see `ACCESS_MODE` in the README.
+- A consumer VPC whose `execute-api` endpoint is registered with the API.
+- Your Cloudsmith token.
+
+**Run it** from the `model-test-access/` directory:
 
 ```bash
-# Set your stack name
-export STACK_NAME=fundamental
-
-# Get API endpoint
-export API_URL=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --region $DEPLOYMENT_REGION \
-  --query 'Stacks[0].Outputs[?OutputKey==`RestApiEndpoint`].OutputValue' \
-  --output text)
-echo "API URL: $API_URL"
-
-# Get instance profile ARN for EC2
-export INSTANCE_PROFILE_ARN=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --region $DEPLOYMENT_REGION \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayExecuteInstanceProfileArn`].OutputValue' \
-  --output text)
-echo "Instance Profile ARN: $INSTANCE_PROFILE_ARN"
+CLOUDSMITH_API_KEY=<your-token> AWS_PROFILE=<your-profile> \
+  ./start-model-test.sh <stack-name> <region>
 ```
 
-### 2. Create SSH Key Pair
+When the shell opens, run the bundled smoke test:
 
 ```bash
-aws ec2 create-key-pair \
-  --key-name fundamental-test-key \
-  --region $DEPLOYMENT_REGION \
-  --query 'KeyMaterial' \
-  --output text > fundamental-test-key.pem
+nexus-test
+```
 
+**Success criteria:** the test prints a `trained_model_id` and an `accuracy`
+value. Tear everything down when done:
+
+```bash
+AWS_PROFILE=<your-profile> ./stop-model-test.sh <stack-name> <region>
+```
+
+### Option B: Do it yourself (AWS CLI)
+
+These are the same steps by hand: launch an EC2 instance in your consumer VPC, attach the API invoke role the stack created, install the SDK, and run a short test.
+
+#### 1. Get stack outputs
+
+```bash
+export STACK_NAME=fundamental          # your DeploymentName
+export DEPLOYMENT_REGION=us-west-1
+
+export API_URL=$(aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME --region $DEPLOYMENT_REGION \
+  --query 'Stacks[0].Outputs[?OutputKey==`RestApiEndpoint`].OutputValue' --output text)
+
+export INSTANCE_PROFILE_ARN=$(aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME --region $DEPLOYMENT_REGION \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayExecuteInstanceProfileArn`].OutputValue' --output text)
+
+echo "API URL:          $API_URL"
+echo "Instance profile: $INSTANCE_PROFILE_ARN"
+```
+
+#### 2. Create an SSH key pair
+
+```bash
+aws ec2 create-key-pair --key-name fundamental-test-key \
+  --region $DEPLOYMENT_REGION --query 'KeyMaterial' --output text > fundamental-test-key.pem
 chmod 400 fundamental-test-key.pem
 ```
 
-### 3. Create Client EC2 Instance
+#### 3. Launch a client EC2 in your consumer VPC
 
-Launch an EC2 in your consumer subnet to interact with the API:
-
-> **Note:** Replace `<your-vpc-id>` and `<your-subnet-id>` with your Consumer VPC and subnet IDs.
+Use a **public subnet** of the consumer VPC (the VPC whose `execute-api` endpoint
+is registered with the API) so you can SSH in. Replace `<your-vpc-id>` and
+`<your-public-subnet-id>`.
 
 ```bash
-# Get latest Amazon Linux 2023 AMI
 export AMI_ID=$(aws ssm get-parameter \
-  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 \
-  --region $DEPLOYMENT_REGION \
-  --query 'Parameter.Value' \
-  --output text)
+  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+  --region $DEPLOYMENT_REGION --query 'Parameter.Value' --output text)
 
-# Create security group (replace <your-vpc-id>)
+# Security group allowing SSH from your IP only
+export MY_IP=$(curl -s https://checkip.amazonaws.com)
 export CLIENT_SG=$(aws ec2 create-security-group \
-  --region $DEPLOYMENT_REGION \
-  --group-name fundamental-client-sg \
-  --description "Fundamental client access" \
-  --vpc-id <your-vpc-id> \
-  --query 'GroupId' \
-  --output text)
+  --region $DEPLOYMENT_REGION --group-name fundamental-client-sg \
+  --description "Fundamental client access" --vpc-id <your-vpc-id> \
+  --query 'GroupId' --output text)
+aws ec2 authorize-security-group-ingress --region $DEPLOYMENT_REGION \
+  --group-id $CLIENT_SG --protocol tcp --port 22 --cidr ${MY_IP}/32
 
-# Note: Replace 0.0.0.0/0 with your CIDR to limit access to the EC2 instances. You can quickly check your
-# local IP by running curl -s checkip.amazonaws.com
-aws ec2 authorize-security-group-ingress \
-  --region $DEPLOYMENT_REGION \
-  --group-id $CLIENT_SG \
-  --protocol tcp \
-  --port 22 \
-  --cidr 0.0.0.0/0
-
-# Launch instance (replace <your-subnet-id>)
 export INSTANCE_ID=$(aws ec2 run-instances \
-  --image-id $AMI_ID \
-  --instance-type t3.large \
-  --subnet-id <your-subnet-id> \
-  --security-group-ids $CLIENT_SG \
+  --image-id $AMI_ID --instance-type t3.large \
+  --subnet-id <your-public-subnet-id> --security-group-ids $CLIENT_SG \
+  --associate-public-ip-address \
   --iam-instance-profile Arn=$INSTANCE_PROFILE_ARN \
   --key-name fundamental-test-key \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=fundamental-client}]' \
-  --region $DEPLOYMENT_REGION \
-  --query 'Instances[0].InstanceId' \
-  --output text)
+  --region $DEPLOYMENT_REGION --query 'Instances[0].InstanceId' --output text)
 
-# Wait for instance and get public IP
 aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
-export CLIENT_IP=$(aws ec2 describe-instances \
-  --instance-ids $INSTANCE_ID \
+export CLIENT_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID \
   --region $DEPLOYMENT_REGION \
-  --query 'Reservations[0].Instances[0].PublicIpAddress' \
-  --output text)
-echo "Client instance IP: $CLIENT_IP"
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+echo "Client IP: $CLIENT_IP"
 ```
 
-### 4. SSH into Client Instance
+#### 4. SSH into the instance
 
 ```bash
-ssh -i "fundamental-test-key.pem" ec2-user@$CLIENT_IP
+ssh -i fundamental-test-key.pem ec2-user@$CLIENT_IP
 ```
 
-### 5. Install SDK and Run Test
+#### 5. Install the SDK and run a test
 
-From the client instance:
+On the instance, set your values (the `API_URL` printed in step 1, your region,
+and your Cloudsmith token), then run:
 
 ```bash
-# Install Python and SDK
-sudo dnf update -y && sudo dnf install python3.11 python3.11-pip -y
-pip3.11 install fundamental-client[aws-marketplace]
+export AWS_REGION=<your-region>
+export FUNDAMENTAL_API_URL=<your-api-url>
 
-# Create test script (replace DEPLOYMENT_REGION and API_URL with your values)
-cat << EOF > test_fundamental.py
+sudo dnf install -y python3.11 python3.11-pip
+pip3.11 install \
+  --extra-index-url "https://token:<your-cloudsmith-token>@dl.cloudsmith.io/basic/fundamental/fundamental-client/python/simple/" \
+  "fundamental-client[aws-marketplace]==0.15.0" numpy pandas
+
+cat > test_fundamental.py <<'EOF'
+import os
 import numpy as np
 import pandas as pd
 import fundamental
 from fundamental import NEXUSClassifier, FundamentalAWSMarketplaceClient
 
 fundamental.set_client(FundamentalAWSMarketplaceClient(
-    aws_region="${DEPLOYMENT_REGION}",
-    api_url="${API_URL}"
+    aws_region=os.environ["AWS_REGION"],
+    api_url=os.environ["FUNDAMENTAL_API_URL"],
 ))
 
 model = NEXUSClassifier(mode="speed")
-
-# Simple test: Input 1 -> Output 0, Input 0 -> Output 1
-model.fit(
-    X=pd.DataFrame(np.array([[1], [0]])),
-    y=pd.Series(np.array([0, 1]))
-)
-print(f"Trained model ID: {model.trained_model_id_}")
-
-preds = model.predict(pd.DataFrame(np.array([[1], [0]])))
-print(f"Predictions: {preds}")
+model.fit(X=pd.DataFrame(np.array([[1], [0]])), y=pd.Series(np.array([0, 1])))
+print("Trained model ID:", model.trained_model_id_)
+print("Predictions:", model.predict(pd.DataFrame(np.array([[1], [0]]))))
 EOF
 
-# Run the test
 python3.11 test_fundamental.py
 ```
 
-**Success Criteria:**
+**Success criteria:** a `Trained model ID` followed by a prediction array (e.g.
+`[0 1]`).
 
-You should see output indicating a `Trained model ID` followed by a prediction array (e.g., `[0, 1]`).
+#### 6. Clean up
+
+```bash
+exit   # leave the SSH session
+aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
+aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID --region $DEPLOYMENT_REGION
+aws ec2 delete-security-group --group-id $CLIENT_SG --region $DEPLOYMENT_REGION
+aws ec2 delete-key-pair --key-name fundamental-test-key --region $DEPLOYMENT_REGION
+```

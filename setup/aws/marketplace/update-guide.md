@@ -1,45 +1,48 @@
-# Update Guide
+# Upgrade Guide
 
-## Updating a Fundamental Platform Deployment (AWS Marketplace + CloudFormation)
+## Upgrading a Fundamental Platform Deployment (v2.0.0+)
 
-This guide walks customers through updating an existing Fundamental Platform deployment that was purchased through AWS Marketplace and deployed via CloudFormation.
+This guide covers how to upgrade a Fundamental Platform deployment that was deployed via AWS Marketplace and CloudFormation.
 
-### Prerequisites
+Upgrades are applied **in place** as a CloudFormation **stack update** on your running stack, with no EC2 or EKS-node replacement in the common case.
 
-- An active AWS Marketplace subscription for the Fundamental Platform
-- An existing CloudFormation stack deployed from a previous version
-- Access to the AWS Management Console with permissions to update CloudFormation stacks
+---
 
-### 1. Get the New Version Details from AWS Marketplace
+## In-place update
 
-1. Go to **AWS Marketplace Console** → **Manage Subscriptions** → Find your Fundamental Platform subscription → Click **Launch**
+Two cases are covered, both applied as a CloudFormation **stack update** on your running stack:
 
-2. In the Launch page:
-   - Select the **new version** from the version dropdown
-   - Select your **Region** (must match your existing deployment region)
-   - Select **Launch with CloudFormation**
+- **Application / bundle version bump (no template change).** A new platform version ships as new image bundles, selected by two CloudFormation parameters, `FunInfraBundleVersion` and `FunAppBundleVersion`. You update whichever changed against your existing template; no EC2 instance or EKS-node replacement.
+- **Application + infrastructure change (new template).** When a release also changes AWS infrastructure, Fundamental provides a new CloudFormation template. You apply it with **Replace existing template**; in the common case this is still an in-place stack update, and CloudFormation changes only the resources that differ.
 
-3. Copy these values before proceeding:
+| Parameter | Controls |
+|-----------|----------|
+| `FunInfraBundleVersion` | The infra release to move to. Re-imports the infra bundle and rolls the crd/infra chart + image versions it pins. |
+| `FunAppBundleVersion` | The app release to move to. Re-imports the app bundle and rolls the application chart + image versions it pins. |
 
-   > **Important:** Keep these values handy — you will paste them into your CloudFormation stack update.
+**How it works:** when you change either version, the image-importer re-runs and loads that bundle into your account's ECR. The stack derives the bundle and manifest S3 keys from the version strings, then the helm-deployer runs `helm upgrade --install` using the chart versions pinned in each bundle's `manifest.json`. No EC2 instances or EKS nodes are replaced. You change only the bundle version(s); Fundamental hands you the new version strings.
 
-   - Copy the **Amazon S3 URL** of the CloudFormation template (you will need this in Step 2)
-   - Click **Next**
-   - Copy the **AmiId** value shown on the page (you will need this in Step 2)
+### Steps
 
-### 2. Update Your CloudFormation Stack
+1. *(Pre-scan / `SkipImageImport=true` customers only)* load the new bundle into your ECR first, per the [Image Bundle Guide](./image-bundle-guide.md).
 
-1. Go to the **AWS CloudFormation Console** → Find your existing Fundamental Platform stack → Click **Update**
+2. **AWS CloudFormation Console** - your Fundamental Platform stack - **Update**. Choose **Use existing template** for an application-only update, or **Replace existing template** and paste the new template URL when Fundamental provides one. Click **Next**.
 
-2. Select **Replace existing template** → Choose **Amazon S3 URL** → Paste the S3 URL you copied in Step 1 → Click **Next**
+3. Set `FunInfraBundleVersion` and/or `FunAppBundleVersion` to the new version string(s) Fundamental provided (bump only the bundle that changed). For a template update, also set any new infrastructure parameters and the new `AmiId` if provided. *(Pre-scan customers: also leave `SkipImageImport=true`.)*
 
-3. Update the following parameters:
+4. Click **Next** through the screens - review the change set - **Submit**.
 
-   | Parameter | Action |
-   |-----------|--------|
-   | `MPS3KeyPrefix` | Select the new value from the dropdown that corresponds to the version you selected in Step 1 |
-   | `AmiId` | Paste the AmiId you copied from the Marketplace launch page in Step 1 |
+5. Monitor the **Events** tab until `UPDATE_COMPLETE`. The importer log `/aws/lambda/<DeploymentName>-image-importer` shows the new load; then the charts roll.
 
-4. Click **Next** through the remaining screens → Review the changes → Acknowledge any IAM capability warnings if prompted → Click **Submit** / **Update stack**
+> **Note:** In the application-only case this does not touch the EC2 compute tiers or the EKS control plane - only the bundle import and the Kubernetes workloads.
 
-5. Monitor the stack update progress in the CloudFormation **Events** tab. The update may take several minutes depending on which resources are being changed.
+---
+
+## Upgrading from pre-v2.0.0 (service-role deployments)
+
+If you deployed using the CloudFormation service role on a version prior to v2.0.0, the role needs additional permissions for the EKS tier added in v2.0.0. Before upgrading:
+
+1. Re-run `cloudformation-deploy-role/create-role.sh` from the cookbook, or re-apply the policy files in `cloudformation-deploy-role/policies/`.
+2. Then update the stack in place as described above.
+
+Skipping the role refresh causes the upgrade to fail with `AccessDenied` on EKS resources.

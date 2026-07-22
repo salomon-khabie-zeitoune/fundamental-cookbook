@@ -20,9 +20,9 @@ cloudformation-deploy-role/
 ├── policies/
 │   ├── 01-cloudformation-s3.json  # CloudFormation + S3 buckets
 │   ├── 02-networking.json         # VPC, Subnets, NAT, IGW, Routes, Endpoints, Security Groups
-│   ├── 03-compute.json            # EC2, Launch Templates, ASG, Load Balancers
-│   ├── 04-iam.json                # IAM Roles, Instance Profiles (scoped)
-│   ├── 05-data-services.json      # KMS, Secrets, AmazonMQ, ElastiCache, SSM, CloudWatch Logs
+│   ├── 03-compute.json            # EC2, Launch Templates, ASG, Load Balancers, EKS, helm-deployer Lambda
+│   ├── 04-iam.json                # IAM Roles, Instance Profiles, OIDC provider (IRSA), service-linked roles
+│   ├── 05-data-services.json      # KMS (incl. grants), Secrets, AmazonMQ, ElastiCache, SSM, CloudWatch Logs
 │   └── 06-api-gateway.json        # REST API Gateway, VPC Links
 ├── create-role.sh                 # Script to create the role
 ├── delete-role.sh                 # Script to delete the role
@@ -43,30 +43,42 @@ cloudformation-deploy-role/
 
 ### Option 2: Manual AWS CLI
 
+The combined permission set exceeds the 10,240-char limit for inline role policies, so each file is created as a **customer-managed policy** (separate 6 KB limit each) and attached to the role - the same approach `create-role.sh` uses. Do not attach them as inline policies.
+
 ```bash
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+
 # 1. Create the role
 aws iam create-role \
   --role-name FundamentalPlatform-CFServiceRole \
   --assume-role-policy-document file://trust-policy.json \
   --description "CloudFormation service role for Fundamental Platform"
 
-# 2. Attach each policy
-aws iam put-role-policy \
-  --role-name FundamentalPlatform-CFServiceRole \
-  --policy-name cloudformation \
-  --policy-document file://policies/01-cloudformation.json
+# 2. Create one customer-managed policy per file and attach it.
+#    The policy name follows create-role.sh: <role>-<area>, where <area>
+#    is the file name without its NN- prefix (e.g. 01-cloudformation-s3.json
+#    -> FundamentalPlatform-CFServiceRole-cloudformation-s3).
+for policy_file in policies/*.json; do
+  area="$(basename "$policy_file" .json | sed 's/^[0-9]*-//')"
+  policy_name="FundamentalPlatform-CFServiceRole-${area}"
 
-# ... repeat for each policy file
+  aws iam create-policy \
+    --policy-name "$policy_name" \
+    --policy-document "file://$policy_file"
+
+  aws iam attach-role-policy \
+    --role-name FundamentalPlatform-CFServiceRole \
+    --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${policy_name}"
+done
 ```
 
 ### Option 3: AWS Console
 
-1. Go to **IAM → Roles → Create role**
-2. Select **Custom trust policy** and paste contents of `trust-policy.json`
-3. Skip adding managed policies
-4. Name the role (e.g., `FundamentalPlatform-CFServiceRole`)
-5. After creation, go to the role → **Add permissions → Create inline policy**
-6. For each file in `policies/`, create an inline policy with that JSON
+1. Go to **IAM → Policies → Create policy** and, for each file in `policies/`, paste its JSON and name the policy `FundamentalPlatform-CFServiceRole-<area>` (e.g. `01-cloudformation-s3.json` → `FundamentalPlatform-CFServiceRole-cloudformation-s3`). Use customer-managed policies, not inline - the combined set exceeds the inline-policy size limit.
+2. Go to **IAM → Roles → Create role**
+3. Select **Custom trust policy** and paste contents of `trust-policy.json`
+4. On **Add permissions**, attach the customer-managed policies you created in step 1
+5. Name the role (e.g., `FundamentalPlatform-CFServiceRole`)
 
 ## Deploying the Stack with the Service Role
 

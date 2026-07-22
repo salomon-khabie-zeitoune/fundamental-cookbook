@@ -63,6 +63,19 @@
       "Resource": ["arn:aws:iam::*:policy/*"]
     },
     {
+      "Sid": "IAMOIDCProviderOperations",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider",
+        "iam:UntagOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviderTags"
+      ],
+      "Resource": ["arn:aws:iam::*:oidc-provider/*"]
+    },
+    {
       "Sid": "IAMServiceLinkedRoles",
       "Effect": "Allow",
       "Action": [
