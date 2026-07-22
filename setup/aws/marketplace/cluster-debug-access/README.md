@@ -11,15 +11,6 @@ These two scripts give you temporary `kubectl` access using **only AWS-native se
 
 ## How it works
 
-```
-your laptop                         platform VPC (no NAT)
-+-----------+   SSM data channel    +-------------+        +------------------+
-|  kubectl  |---------------------->|  relay EC2  |------->|  private EKS API |
-| localhost |   (AWS Systems Mgr)   |  (SSM only) |  :443  |                  |
-|   :8443   |                       +-------------+        +------------------+
-+-----------+
-```
-
 - `kubectl` runs **on your laptop** and talks to `localhost:8443`.
 - SSM forwards that to the relay instance over the AWS Systems Manager data channel (reaching the instance through the VPC's existing SSM interface endpoints - no internet needed).
 - The relay instance forwards the bytes to the cluster's private API endpoint on port 443. It is a pure TCP relay: nothing is installed on it, and it holds no cluster credentials.
